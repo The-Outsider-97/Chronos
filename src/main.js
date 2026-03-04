@@ -1,5 +1,5 @@
 import { Game } from './engine.js';
-import { CONFIG, ActionType } from './constants.js';
+import { CONFIG, ActionType, BOARD_VARIANTS, applyBoardSize } from './constants.js';
 import { GoogleGenAI } from "@google/genai";
 
 let game;
@@ -20,14 +20,57 @@ const scoreboardTabBtn = document.getElementById('scoreboard-tab-btn');
 const commsPanelEl = document.getElementById('comms-panel');
 const scoreboardPanelEl = document.getElementById('scoreboard-panel');
 const scoreboardContentEl = document.getElementById('scoreboard-content');
+const rightSidebarEl = document.getElementById('right-sidebar');
+const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+const boardSizeSelectEl = document.getElementById('board-size-select');
+const topCoordsEl = document.getElementById('board-top-coords');
+const bottomCoordsEl = document.getElementById('board-bottom-coords');
+const leftCoordsEl = document.getElementById('board-left-coords');
+const rightCoordsEl = document.getElementById('board-right-coords');
 
 const SCOREBOARD_STORAGE_KEY = 'chronos_scoreboard_history_v1';
 let activeSidePanel = 'comms';
+let sidePanelHidden = false;
 
-function initGame() {
+function initGame(boardSize = CONFIG.board.size) {
+  applyBoardSize(boardSize);
   game = new Game();
+  boardEl.innerHTML = '';
+  selectedUnit = null;
+  selectedToken = null;
+  possibleActions = null;
+  renderBoardCoordinates();
   render();
-  log("Game Started. Player 1's Turn.");
+  log(`Game Started on ${CONFIG.board.size}x${CONFIG.board.size}. Player 1's Turn.`);
+}
+
+
+function renderBoardCoordinates() {
+  if (!topCoordsEl || !bottomCoordsEl || !leftCoordsEl || !rightCoordsEl) return;
+
+  const size = CONFIG.board.size;
+  const letters = Array.from({ length: size }, (_, idx) => String.fromCharCode(65 + idx));
+
+  topCoordsEl.innerHTML = letters.map(label => `<div class="flex-1 text-center">${label}</div>`).join('');
+  bottomCoordsEl.innerHTML = letters.map(label => `<div class="flex-1 text-center">${label}</div>`).join('');
+
+  leftCoordsEl.innerHTML = Array.from({ length: size }, (_, idx) => `<div class="flex-1 flex items-center justify-center">${size - idx}</div>`).join('');
+  rightCoordsEl.innerHTML = Array.from({ length: size }, (_, idx) => `<div class="flex-1 flex items-center justify-center">${size - idx}</div>`).join('');
+}
+
+function setSidebarVisibility(hidden) {
+  sidePanelHidden = hidden;
+  if (!rightSidebarEl || !sidebarToggleBtn) return;
+
+  rightSidebarEl.classList.toggle('w-80', !hidden);
+  rightSidebarEl.classList.toggle('w-16', hidden);
+
+  const collapsible = rightSidebarEl.querySelectorAll('#comms-panel, #scoreboard-panel, #side-panel-title, #comms-tab-btn, #scoreboard-tab-btn');
+  collapsible.forEach((el) => {
+    el.classList.toggle('hidden', hidden);
+  });
+
+  sidebarToggleBtn.textContent = hidden ? 'Show' : 'Hide';
 }
 
 function getMatchHistory() {
@@ -134,10 +177,11 @@ function render() {
 
 function renderGameOver() {
   reportGameResult();
-    const p1Score = game.getCorePoints(0);
+  const p1Score = game.getCorePoints(0);
   const p2Score = game.getCorePoints(1);
 
-  const centerUnit = game.board.getUnitAt(4, 4);
+  const center = Math.floor(CONFIG.board.size / 2);
+  const centerUnit = game.board.getUnitAt(center, center);
   const centerCoreCaptured = Boolean(centerUnit && centerUnit.health > 0 && centerUnit.playerId === game.winner);
   const winnerLabel = game.winner === 0 ? 'Player 1' : game.winner === 1 ? 'Player 2' : 'Draw';
   const pointDifference = Math.abs(p1Score - p2Score);
@@ -217,7 +261,8 @@ async function reportGameResult() {
         outcome: outcome,
         score: game.players[aiId].score,
         opponent_score: game.players[0].score,
-        rounds: game.round
+        rounds: game.round,
+        board_size: CONFIG.board.size
     };
     
     try {
@@ -283,13 +328,14 @@ function renderBoard() {
       cell.className = 'relative flex items-center justify-center cell-transition border border-black/10';
       
       // Color Palette Logic
-      if (r === 4 && c === 4) {
+      const center = Math.floor(CONFIG.board.size / 2);
+      if (r === center && c === center) {
         // Center Core: Brown red
         cell.style.backgroundColor = '#781c1c';
       } else if (game.board.isCoreCell(r, c)) {
         // 8 Adjacent Core: Traffic red
         cell.style.backgroundColor = '#cb0605';
-      } else if (r === 0 || r === 8) {
+      } else if (r === 0 || r === CONFIG.board.size - 1) {
         // Home Base: Black brown
         cell.style.backgroundColor = '#181818';
       } else {
@@ -928,13 +974,31 @@ function resetSelection() {
 }
 
 // Start
-initGame();
+if (boardSizeSelectEl) {
+  boardSizeSelectEl.innerHTML = BOARD_VARIANTS.map(size => `<option value="${size}">${size} x ${size}</option>`).join('');
+  boardSizeSelectEl.value = String(CONFIG.board.size);
+}
+
+initGame(CONFIG.board.size);
 renderScoreboardPanel();
 switchSidePanel(activeSidePanel);
+setSidebarVisibility(false);
 
 if (commsTabBtn && scoreboardTabBtn) {
   commsTabBtn.onclick = () => switchSidePanel('comms');
   scoreboardTabBtn.onclick = () => switchSidePanel('scoreboard');
+}
+
+if (boardSizeSelectEl) {
+  boardSizeSelectEl.onchange = (event) => {
+    const selectedSize = Number(event.target.value);
+    if (!BOARD_VARIANTS.includes(selectedSize)) return;
+    initGame(selectedSize);
+  };
+}
+
+if (sidebarToggleBtn) {
+  sidebarToggleBtn.onclick = () => setSidebarVisibility(!sidePanelHidden);
 }
 
 // Chat Logic
