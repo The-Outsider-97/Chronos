@@ -1,0 +1,19 @@
+{
+  "chronos_rules": [
+    "Strategos is the most important piece. If it dies, you lose.",
+    "Warden is a strong defender (+2 points).",
+    "Scout is fast but weak (+1 point).",
+    "Center core (4,4) gives a 2x multiplier to points.",
+    "Adjacent 8 core tiles give a 1x multiplier.",
+    "Eliminate enemy pieces by jumping over them or surrounding them (depending on specific rule implementation).",
+    "Control the core to win by points if no assassination occurs."
+  ],
+  "chronos_strategies": [
+    "Prioritize moving the Strategos towards the core but keep it protected.",
+    "Use Wardens to block enemy paths to your Strategos.",
+    "Use Scouts to harass enemy pieces and quickly capture core positions.",
+    "If an enemy piece is vulnerable, attack it.",
+    "Always check if your Strategos is in danger before making a move.",
+    "The center core is the most valuable position on the board."
+  ]
+}
