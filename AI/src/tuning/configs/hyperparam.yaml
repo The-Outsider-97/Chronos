@@ -1,0 +1,87 @@
+# ==============================================
+# Unified Hyperparameter Tuning Configuration
+# Supports both Grid Search and Bayesian Search
+# ==============================================
+
+model:
+  name: SLAI-Agent
+  version: v1.8.1
+
+run:
+  id_prefix: "run"
+  output_dir: "logs/"
+  plots_dir: "plots/"
+
+training:
+  num_samples: 500
+
+# ==========================
+# Hyperparameters Definition
+# ==========================
+
+hyperparameters:
+  GradientBoosting:
+    - name: learning_rate
+      type: real
+      min: 0.0001
+      max: 0.1
+      prior: "log-uniform"
+      
+    - name: n_estimators
+      type: integer
+      min: 50
+      max: 300
+      
+  RandomForest:
+    - name: n_estimators
+      type: integer
+      min: 50
+      max: 300
+      
+    - name: max_depth
+      type: integer
+      min: 3
+      max: 15
+
+  ARIMA:
+    - name: p
+      type: integer
+      values: [0, 1, 2, 3]
+    - name: d
+      type: integer
+      values: [0, 1, 2]
+    - name: q
+      type: integer
+      values: [0, 1, 2, 3]
+
+# ==========================
+# Tuning Strategy Settings
+# ==========================
+
+tuning:
+  strategy: bayesian         # options: bayesian, grid
+  n_calls: 50                # used for Bayesian
+  n_random_starts: 5         # used for Bayesian
+  allow_generate: True
+
+bayesian_search:
+  n_calls: 50
+  random_state: 42
+  n_initial_points: 5
+  model_type: "GradientBoosting"
+  output_dir: "src/tuning/reports"
+  summary_dir: "src/tuning/reports"
+
+grid_search:
+  n_jobs: -1
+  random_state: 42
+  cross_val_folds: 5
+  output_dir: "src/tuning/reports"
+  summary_dir: "src/tuning/reports"
+
+
+configs:
+  bayesian_config: "hyperparam_tuning/example_bayesian_config.json"
+  grid_config: "hyperparam_tuning/example_grid_config.json"
+
+
