@@ -96,10 +96,9 @@ class Player {
 
   createUnits() {
     const homeRow = CONFIG.home_rows[this.id];
-    
-    // Fixed Lineup: [S] [S] [S] [W] [C] [W] [S] [S] [S]
-    const lineup = ['Scout', 'Scout', 'Scout', 'Warden', 'Strategos', 'Warden', 'Scout', 'Scout', 'Scout'];
-    
+    // Fixed Base Lineup: [S] [S] [S] [W] [C] [W] [S] [S] [S]
+    const lineup = this.buildLineup();
+
     lineup.forEach((type, col) => {
       const count = this.units.filter(u => u.type === type).length;
       const unitId = `P${this.id}_${type}_${count}`;
@@ -109,6 +108,19 @@ class Player {
       this.board.placeUnit(unit);
     });
   }
+
+  buildLineup() {
+    const size = this.board.size;
+    const center = Math.floor(size / 2);
+    const lineup = Array(size).fill('Scout');
+
+    lineup[center] = 'Strategos';
+    lineup[center - 1] = 'Warden';
+    lineup[center + 1] = 'Warden';
+
+    return lineup;
+  }
+
 
   getActiveUnits(round) {
     return this.units.filter(u => u.canAct(round));
@@ -219,7 +231,8 @@ export class Game {
 
   resolveTie(p0Points, p1Points) {
       // 1. Center Core Occupancy
-      const centerUnit = this.board.getUnitAt(4, 4);
+      const center = Math.floor(this.board.size / 2);
+      const centerUnit = this.board.getUnitAt(center, center);
       if (centerUnit && centerUnit.health > 0) {
           this.winner = centerUnit.playerId;
           this.phase = 'game_over';
