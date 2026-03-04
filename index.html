@@ -27,6 +27,7 @@
         <div id="score-display" class="flex gap-6 mr-4 font-mono font-bold text-sm bg-black/40 px-6 py-2 rounded-full border border-white/5">
           <div class="text-sky-blue">P1: 0</div>
           <div class="text-traffic-red">P2: 0</div>
+          </div>
         </div>
         <div class="text-right">
           <div id="phase-indicator" class="text-[10px] font-bold text-slate-500 tracking-[0.2em] uppercase">PLANNING</div>
@@ -45,6 +46,16 @@
         <div class="p-4 rounded-2xl bg-white/5 border border-white/5">
           <h3 class="text-sky-blue font-bold text-xs tracking-widest uppercase mb-2">Commander Status</h3>
           <div class="text-[11px] text-slate-400 leading-relaxed">Eliminate the enemy Strategos or secure the Core with 5+ points to achieve victory.</div>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-white/5 border border-white/5 flex flex-col gap-3">
+          <h3 class="text-sky-blue font-bold text-xs tracking-widest uppercase">Board Grid</h3>
+          <select id="board-size-select" class="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-white focus:outline-none focus:border-sky-blue">
+            <option value="9">9 x 9</option>
+            <option value="11">11 x 11</option>
+            <option value="13">13 x 13</option>
+          </select>
+          <div class="text-[10px] text-slate-500">Larger grids add extra Scouts while keeping Strategos/Wardens centered.</div>
         </div>
 
         <!-- Action Deck / Controls -->
@@ -76,20 +87,27 @@
              style="background-image: linear-gradient(#efefef 1px, transparent 1px), linear-gradient(90deg, #efefef 1px, transparent 1px); background-size: 50px 50px;">
         </div>
 
-        <div id="board-container" class="relative p-1 bg-white/5 rounded-2xl shadow-[0_0_100px_rgba(0,0,0,0.8)] backdrop-blur-md z-10 overflow-hidden" style="width: 508px; height: 508px;">
-          <div id="board" class="relative w-full h-full">
+        <div id="board-container" class="relative p-1 bg-white/5 rounded-2xl shadow-[0_0_100px_rgba(0,0,0,0.8)] backdrop-blur-md z-10" style="width: 508px; height: 508px;">
+          <div id="board-top-coords" class="absolute left-1 right-1 top-0 -translate-y-full flex text-[10px] text-slate-500 font-mono"></div>
+          <div id="board-bottom-coords" class="absolute left-1 right-1 bottom-0 translate-y-full flex text-[10px] text-slate-500 font-mono"></div>
+          <div id="board-left-coords" class="absolute top-1 bottom-1 left-0 -translate-x-full flex flex-col text-[10px] text-slate-500 font-mono"></div>
+          <div id="board-right-coords" class="absolute top-1 bottom-1 right-0 translate-x-full flex flex-col text-[10px] text-slate-500 font-mono"></div>
+          <div id="board" class="relative w-full h-full overflow-hidden">
             <!-- Cells injected here -->
           </div>
         </div>
       </section>
 
       <!-- Right Sidebar: Comms & Scoreboard -->
-      <aside class="w-80 border-l border-white/5 glass-panel flex flex-col p-6 gap-6 z-10">
+      <aside id="right-sidebar" class="w-80 border-l border-white/5 glass-panel flex flex-col p-6 gap-6 z-10 relative">
         <div class="flex items-center justify-between gap-3">
           <h3 id="side-panel-title" class="text-[10px] font-bold text-slate-500 tracking-[0.2em] uppercase">Comms Link</h3>
-          <div class="inline-flex rounded-xl border border-white/10 bg-black/20 p-1">
+          <div class="flex items-center gap-2">
+            <button id="sidebar-toggle-btn" class="px-2 py-1 rounded-lg text-[10px] font-bold tracking-widest uppercase border border-white/10 text-slate-300 hover:text-white">Hide</button>
+            <div class="inline-flex rounded-xl border border-white/10 bg-black/20 p-1">
             <button id="comms-tab-btn" class="px-3 py-1 rounded-lg text-[10px] font-bold tracking-widest uppercase bg-sky-blue text-white">Comms</button>
             <button id="scoreboard-tab-btn" class="px-3 py-1 rounded-lg text-[10px] font-bold tracking-widest uppercase text-slate-400">Scoreboard</button>
+            </div>
           </div>
         </div>
 
