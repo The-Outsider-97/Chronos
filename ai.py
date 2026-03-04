@@ -48,6 +48,11 @@ class AIPlayer:
             self.learning_agent = self.factory.create("learning", self.shared_memory)
             self.planning_enabled = True
             self._planning_task_registered = False
+            self._style_weights = {
+                "aggression": 1.0,
+                "core_control": 1.0,
+                "safety": 1.0,
+            }
             
             logger.info("AI Player initialized with Knowledge, Planning, Execution, and Learning agents.")
         except Exception as e:
@@ -136,7 +141,7 @@ class AIPlayer:
         """
         Heuristic scoring function that incorporates agent 'intelligence'.
         """
-        score = 0
+        score = 0.0
         
         # Piece values from rulebook
         PIECE_VALUES = {
@@ -153,12 +158,8 @@ class AIPlayer:
         tr, tc = target.get('r'), target.get('c')
         unit_id = move.get('unitId')
         
-        # Find the unit acting
-        acting_unit = None
-        for unit in self._extract_units(game_state):
-            if unit.get('id') == unit_id:
-                acting_unit = unit
-                break
+        unit_map, board_map = self._build_unit_and_board_maps(game_state)
+        acting_unit = unit_map.get(unit_id)
         
         if not acting_unit:
             return -1000
@@ -166,16 +167,16 @@ class AIPlayer:
         # 1. Core Control (High Priority)
         # Multipliers: Center = 2x, Adjacent = 1x
         if tr == 4 and tc == 4:
-            score += 100  # Center core is extremely valuable
+            score += 100 * self._style_weights["core_control"]
         elif self._is_core_cell(tr, tc):
-            score += 40  # Adjacent core is valuable
+            score += 40 * self._style_weights["core_control"]
             
         # 2. Attack (High Priority)
         if move_type == 'attack':
             # Attacking is good, especially high-value targets
             target_unit_type = target.get('type')
             target_value = PIECE_VALUES.get(target_unit_type, 1)
-            score += 50 * target_value
+            score += 50 * target_value * self._style_weights["aggression"]
             
             # If we can eliminate the Strategos, it's a winning move
             if target_unit_type == 'Strategos':
@@ -183,9 +184,22 @@ class AIPlayer:
             
         # 3. Piece Protection & Value
         # Moving high value pieces to safety or better positions
-                score += 10
-        
-        # 4. Planning Alignment
+        destination = self._infer_destination(move, acting_unit)
+        if destination is not None:
+            destination_threat = self._estimate_enemy_threat(destination, acting_unit, unit_map, board_map)
+            score -= destination_threat * 28 * self._style_weights["safety"]
+
+            if acting_unit.get("type") == "Strategos":
+                score -= destination_threat * 20
+            elif acting_unit.get("type") == "Scout" and move_type == "move":
+                # Scouts are more expendable and can be used for tempo.
+                score += 3
+
+        # 4. Mobility / initiative
+        projected_mobility = self._estimate_mobility_after_move(move, acting_unit, unit_map, board_map)
+        score += projected_mobility * 4
+
+        # 5. Planning Alignment
         if plan and isinstance(plan, list):
             for step in plan:
                 # If the plan suggests a specific unit or action type
@@ -194,16 +208,155 @@ class AIPlayer:
                 if hasattr(step, 'context') and step.context.get('unit_id') == unit_id:
                     score += 20
 
-        # 5. Strategic Context (from Knowledge Agent)
-        if "core control" in strategy.lower() and self._is_core_cell(tr, tc):
+        # 6. Strategic Context (from Knowledge Agent)
+        strategy_lower = strategy.lower()
+        if "core control" in strategy_lower and self._is_core_cell(tr, tc):
             score += 15
-        if "aggressive" in strategy.lower() and move_type == 'attack':
+        if "aggressive" in strategy_lower and move_type == 'attack':
             score += 15
+        if "protect" in strategy_lower and acting_unit.get("type") == "Strategos":
+            score += 12
 
-        # 6. Random factor for variety
+        # 7. Tactical priorities
+        score += self._score_tactical_objectives(move, acting_unit, unit_map, board_map)
+
+        # 8. Random factor for variety
         import random
         score += random.uniform(0, 5)
         
+        return score
+
+    def _build_unit_and_board_maps(self, game_state):
+        unit_map = {}
+        board_map = {}
+
+        board = game_state.get('board', [])
+        if isinstance(board, list):
+            for r, row in enumerate(board):
+                if not isinstance(row, list):
+                    continue
+                for c, cell in enumerate(row):
+                    if not isinstance(cell, dict):
+                        continue
+                    unit = cell.get('unit')
+                    if not isinstance(unit, dict):
+                        continue
+                    normalized = {
+                        'id': unit.get('id'),
+                        'type': unit.get('type'),
+                        'owner': unit.get('owner'),
+                        'hp': unit.get('hp', 1),
+                        'r': r,
+                        'c': c,
+                    }
+                    unit_map[normalized['id']] = normalized
+                    board_map[(r, c)] = normalized
+
+        for unit in self._extract_units(game_state):
+            unit_id = unit.get('id')
+            if unit_id in unit_map:
+                continue
+            normalized = {
+                'id': unit_id,
+                'type': unit.get('type'),
+                'owner': unit.get('owner'),
+                'hp': unit.get('hp', 1),
+                'r': unit.get('r'),
+                'c': unit.get('c'),
+            }
+            unit_map[unit_id] = normalized
+            if normalized['r'] is not None and normalized['c'] is not None:
+                board_map[(normalized['r'], normalized['c'])] = normalized
+
+        return unit_map, board_map
+
+    def _infer_destination(self, move, acting_unit):
+        move_type = move.get("type")
+        if move_type == "move":
+            target = move.get("target") or move.get("params", {}).get("target") or {}
+            if isinstance(target, dict) and target.get("r") is not None and target.get("c") is not None:
+                return (target.get("r"), target.get("c"))
+        if acting_unit.get("r") is not None and acting_unit.get("c") is not None:
+            return (acting_unit.get("r"), acting_unit.get("c"))
+        return None
+
+    def _estimate_enemy_threat(self, destination, acting_unit, unit_map, board_map):
+        if destination is None:
+            return 0
+        dr, dc = destination
+        threat = 0
+        owner = acting_unit.get("owner")
+        for enemy in unit_map.values():
+            if enemy.get("owner") == owner or enemy.get("hp", 0) <= 0:
+                continue
+            er, ec = enemy.get("r"), enemy.get("c")
+            if er is None or ec is None:
+                continue
+            distance = max(abs(dr - er), abs(dc - ec))
+            attack_range = 2 if enemy.get("type") == "Scout" else 1
+            if distance <= attack_range and self._line_clear((er, ec), (dr, dc), board_map, owner):
+                threat += 1
+        return threat
+
+    def _line_clear(self, start, end, board_map, acting_owner):
+        sr, sc = start
+        er, ec = end
+        dr = er - sr
+        dc = ec - sc
+        steps = max(abs(dr), abs(dc))
+        if steps <= 1:
+            return True
+        step_r = 0 if dr == 0 else int(dr / abs(dr))
+        step_c = 0 if dc == 0 else int(dc / abs(dc))
+        r, c = sr, sc
+        for _ in range(1, steps):
+            r += step_r
+            c += step_c
+            occupant = board_map.get((r, c))
+            if occupant and occupant.get("owner") != acting_owner:
+                return False
+        return True
+
+    def _estimate_mobility_after_move(self, move, acting_unit, unit_map, board_map):
+        destination = self._infer_destination(move, acting_unit)
+        if destination is None:
+            return 0
+        r, c = destination
+        mobility = 0
+        for nr in range(max(0, r - 2), min(8, r + 2) + 1):
+            for nc in range(max(0, c - 2), min(8, c + 2) + 1):
+                if (nr, nc) == (r, c):
+                    continue
+                if (nr, nc) not in board_map:
+                    mobility += 1
+        return mobility
+
+    def _score_tactical_objectives(self, move, acting_unit, unit_map, board_map):
+        score = 0
+        move_type = move.get("type")
+        owner = acting_unit.get("owner")
+
+        if move_type == "attack":
+            target = move.get("target") or move.get("params", {}).get("target") or {}
+            if isinstance(target, dict):
+                tr, tc = target.get("r"), target.get("c")
+                victim = board_map.get((tr, tc)) if tr is not None and tc is not None else None
+                if victim and victim.get("type") == "Warden":
+                    # Remove tanky front-line units to open center access.
+                    score += 18
+
+        # Encourage moves that support allies near the core.
+        destination = self._infer_destination(move, acting_unit)
+        if destination is not None:
+            dr, dc = destination
+            for ally in unit_map.values():
+                if ally.get("owner") != owner or ally.get("id") == acting_unit.get("id"):
+                    continue
+                ar, ac = ally.get("r"), ally.get("c")
+                if ar is None or ac is None:
+                    continue
+                if max(abs(dr - ar), abs(dc - ac)) <= 1 and self._is_core_cell(ar, ac):
+                    score += 8
         return score
 
     def _is_core_cell(self, r, c):
@@ -296,6 +449,17 @@ class AIPlayer:
                     task_embedding=np.zeros(256), # Dummy embedding
                     best_agent_strategy_name="planning" if result.get('outcome') == 'win' else 'rl'
                 )
+
+            # Lightweight online adaptation: tune strategic style per result.
+            outcome = (result.get('outcome') or '').lower()
+            if outcome == 'win':
+                self._style_weights["aggression"] = min(1.4, self._style_weights["aggression"] + 0.05)
+                self._style_weights["core_control"] = min(1.5, self._style_weights["core_control"] + 0.04)
+            elif outcome == 'loss':
+                self._style_weights["safety"] = min(1.5, self._style_weights["safety"] + 0.06)
+                self._style_weights["aggression"] = max(0.8, self._style_weights["aggression"] - 0.03)
+
+            self.shared_memory.set('ai_style_weights', dict(self._style_weights))
             return True
         except Exception as e:
             logger.error(f"Error in learn_from_game: {e}", exc_info=True)
@@ -427,4 +591,3 @@ def run(server_class=HTTPServer, handler_class=AIRequestHandler):
 
 if __name__ == "__main__":
     run()
-
