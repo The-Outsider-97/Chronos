@@ -1,3 +1,5 @@
+export const BOARD_VARIANTS = [9, 11, 13];
+
 export const CONFIG = {
   board: {
     size: 9,
@@ -39,6 +41,17 @@ export const CONFIG = {
   action_tokens: [1, 2, 3, 4, 5],
   attack_threshold: 3
 };
+
+export function applyBoardSize(boardSize) {
+  const size = Number(boardSize);
+  if (!BOARD_VARIANTS.includes(size)) return;
+
+  CONFIG.board.size = size;
+  const center = Math.floor(size / 2);
+  CONFIG.board.core.rows = [center - 1, center + 1];
+  CONFIG.board.core.cols = [center - 1, center + 1];
+  CONFIG.home_rows = [0, size - 1];
+}
 
 export const ActionType = {
   MOVE: 'move',
