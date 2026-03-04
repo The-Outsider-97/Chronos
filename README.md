@@ -1,6 +1,6 @@
-# AI Game Project
+# Chronos
 
-This project is a full-stack application featuring a React frontend and a Python-based AI backend.
+The ultimate game-theory board game
 
 ## Prerequisites
 
