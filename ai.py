@@ -46,10 +46,14 @@ class AIPlayer:
             self.planning_agent = self.factory.create("planning", self.shared_memory)
             self.execution_agent = self.factory.create("execution", self.shared_memory)
             self.learning_agent = self.factory.create("learning", self.shared_memory)
+            self.planning_enabled = True
+            self._planning_task_registered = False
             
             logger.info("AI Player initialized with Knowledge, Planning, Execution, and Learning agents.")
         except Exception as e:
             logger.error(f"Failed to initialize AI Player: {e}", exc_info=True)
+            self.planning_enabled = False
+            self._planning_task_registered = False
             # We don't raise here to allow the server to start even if agents fail
             pass
 
@@ -63,31 +67,50 @@ class AIPlayer:
             # 1. Knowledge Retrieval: Get strategy context
             strategy_context = ""
             try:
-                # Query for Chronos-specific strategies
-                knowledge_response = self.knowledge_agent.query("Chronos game strategy and piece value")
-                if knowledge_response and 'results' in knowledge_response:
-                    strategy_context = " ".join([r.get('content', '') for r in knowledge_response['results']])
+                # Query for Chronos-specific strategies using the best available API
+                strategy_context = self._get_strategy_context()
                 logger.info(f"Knowledge Agent retrieved strategy context: {strategy_context[:100]}...")
             except Exception as e:
                 logger.warning(f"Knowledge Agent query failed: {e}")
 
             # 2. Planning: Generate a high-level plan for the current state
             plan = None
-            try:
-                # Create a formal Task for the planning agent
-                goal_task = Task(
-                    name="select_best_move",
-                    task_type=TaskType.ABSTRACT,
-                    goal_state={"move_selected": True},
-                    context={
-                        "game_state": game_state,
-                        "strategy": strategy_context
-                    }
-                )
-                plan = self.planning_agent.generate_plan(goal_task)
-                logger.info(f"Planning Agent generated plan with {len(plan) if plan else 0} steps.")
-            except Exception as e:
-                logger.warning(f"Planning Agent failed to generate plan: {e}")
+            if self.planning_enabled:
+                try:
+                    # Normalize optional planner registry payloads used by scheduler internals
+                    agent_registry = self.shared_memory.get('agent_registry')
+                    if not isinstance(agent_registry, dict):
+                        self.shared_memory.set('agent_registry', {})
+
+                    # Create a formal Task for the planning agent
+                    goal_task = Task(
+                        name="select_best_move",
+                        task_type=TaskType.ABSTRACT,
+                        goal_state={"move_selected": True},
+                        context={
+                            "game_state": game_state,
+                            "strategy": strategy_context
+                        }
+                    )
+
+                    # Register only once to avoid noisy duplicate-registration warnings.
+                    if (
+                        not self._planning_task_registered
+                        and hasattr(self.planning_agent, 'register_task')
+                    ):
+                        self.planning_agent.register_task(goal_task)
+                        self._planning_task_registered = True
+
+                    plan = self.planning_agent.generate_plan(goal_task)
+                    if not isinstance(plan, list):
+                        plan = None
+                        logger.warning("Planning Agent returned no usable plan. Disabling planner for this session.")
+                        self.planning_enabled = False
+                    logger.info(f"Planning Agent generated plan with {len(plan) if plan else 0} steps.")
+                except Exception as e:
+                    logger.warning(f"Planning Agent failed to generate plan: {e}")
+                    # Prevent repeated scheduler/validation error spam for subsequent turns.
+                    self.planning_enabled = False
 
             # 3. Execution: Score each valid move and select the best one
             # We'll use the ExecutionAgent's action selector logic conceptually
@@ -123,16 +146,18 @@ class AIPlayer:
         }
         
         move_type = move.get('type')
-        params = move.get('params', {})
-        target = params.get('target', {})
+        params = move.get('params', {}) if isinstance(move.get('params', {}), dict) else {}
+        target = params.get('target') or move.get('target') or {}
+        if not isinstance(target, dict):
+            target = {}
         tr, tc = target.get('r'), target.get('c')
         unit_id = move.get('unitId')
         
         # Find the unit acting
         acting_unit = None
-        for u in game_state.get('board', []):
-            if u.get('id') == unit_id:
-                acting_unit = u
+        for unit in self._extract_units(game_state):
+            if unit.get('id') == unit_id:
+                acting_unit = unit
                 break
         
         if not acting_unit:
@@ -158,14 +183,6 @@ class AIPlayer:
             
         # 3. Piece Protection & Value
         # Moving high value pieces to safety or better positions
-        unit_type = acting_unit.get('type')
-        unit_value = PIECE_VALUES.get(unit_type, 1)
-        
-        if unit_type == 'Strategos':
-            # Keep Strategos safe but active
-            if self._is_core_cell(tr, tc):
-                score += 30
-            else:
                 score += 10
         
         # 4. Planning Alignment
@@ -191,7 +208,82 @@ class AIPlayer:
 
     def _is_core_cell(self, r, c):
         # 3x3 core in the center of 9x9 board (3,3 to 5,5)
+        if r is None or c is None:
+            return False
         return 3 <= r <= 5 and 3 <= c <= 5
+
+    def _extract_units(self, game_state):
+        """Return a normalized flat list of unit dicts from varying payload shapes."""
+        units = []
+
+        payload_units = game_state.get('units', [])
+        if isinstance(payload_units, list):
+            for unit in payload_units:
+                if isinstance(unit, dict):
+                    units.append(unit)
+
+        board = game_state.get('board', [])
+        if isinstance(board, list):
+            for row in board:
+                if not isinstance(row, list):
+                    continue
+                for cell in row:
+                    if not isinstance(cell, dict):
+                        continue
+                    unit = cell.get('unit')
+                    if isinstance(unit, dict):
+                        units.append(unit)
+
+        return units
+
+    def _get_strategy_context(self):
+        """Query the knowledge agent via whichever retrieval API is available."""
+        query_text = "Chronos game strategy and piece value"
+
+        # Prefer explicit query API if present.
+        if hasattr(self.knowledge_agent, 'query'):
+            response = self.knowledge_agent.query(query_text)
+            if isinstance(response, dict) and isinstance(response.get('results'), list):
+                return " ".join(
+                    r.get('content', '')
+                    for r in response['results']
+                    if isinstance(r, dict)
+                ).strip()
+
+        # Fallback to contextual search API.
+        if hasattr(self.knowledge_agent, 'contextual_search'):
+            results = self.knowledge_agent.contextual_search(query_text)
+            return self._stringify_knowledge_results(results)
+
+        # Fallback to basic retrieve API.
+        if hasattr(self.knowledge_agent, 'retrieve'):
+            results = self.knowledge_agent.retrieve(query_text)
+            return self._stringify_knowledge_results(results)
+
+        return ""
+
+    def _stringify_knowledge_results(self, results):
+        if not isinstance(results, list):
+            return ""
+
+        chunks = []
+        for item in results:
+            if isinstance(item, tuple) and len(item) >= 2:
+                candidate = item[1]
+                if isinstance(candidate, dict):
+                    text = candidate.get('content') or candidate.get('text')
+                    if isinstance(text, str):
+                        chunks.append(text)
+                elif isinstance(candidate, str):
+                    chunks.append(candidate)
+            elif isinstance(item, dict):
+                text = item.get('content') or item.get('text')
+                if isinstance(text, str):
+                    chunks.append(text)
+            elif isinstance(item, str):
+                chunks.append(item)
+
+        return " ".join(chunks).strip()
 
     def learn_from_game(self, result):
         try:
