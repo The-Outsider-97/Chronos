@@ -153,6 +153,7 @@ export class Game {
     this.phase = 'planning'; // 'planning' | 'resolution' | 'game_over'
     this.currentSlot = 0;
     this.currentPlayerId = 0; // 0 or 1
+    this.turnCount = 0;
     this.actingUnits = new Set();
     this.winner = null;
     this.winningEvent = null;
@@ -236,8 +237,8 @@ export class Game {
     if (!p0Strategos && !p1Strategos) {
         if (!this.allowStrategoslessPlay) {
           this.startMutualStrategosDecision();
+          return null;
         }
-        return null;
     } else if (!p0Strategos) {
         this.winner = 1;
         this.phase = 'game_over';
@@ -250,24 +251,26 @@ export class Game {
         return 0;
     }
 
-    // 2. Cumulative Score threshold (>= 5)
+    // 2. Core points threshold (>= 5) with minimum differential (>= 1)
     const WIN_THRESHOLD = 5;
-    const p0Score = this.players[0].score;
-    const p1Score = this.players[1].score;
+    const MIN_POINT_DIFFERENTIAL = 1;
+    const p0Score = this.getCorePoints(0);
+    const p1Score = this.getCorePoints(1);
+    const scoreDiff = Math.abs(p0Score - p1Score);
 
     if (p0Score >= WIN_THRESHOLD && p1Score >= WIN_THRESHOLD) {
         this.resolveTie(p0Score, p1Score);
-    } else if (p0Score >= WIN_THRESHOLD) {
+    } else if (p0Score >= WIN_THRESHOLD && scoreDiff >= MIN_POINT_DIFFERENTIAL) {
         this.winner = 0;
         this.phase = 'game_over';
         this.winningEvent = { type: 'core_control', player: 0 };
-        this.log(`Game Over. Player 1 wins (Score ${p0Score} >= ${WIN_THRESHOLD}).`);
+        this.log(`Game Over. Player 1 wins (Core points ${p0Score}, diff ${scoreDiff} >= ${MIN_POINT_DIFFERENTIAL}).`);
         return 0;
-    } else if (p1Score >= WIN_THRESHOLD) {
+    } else if (p1Score >= WIN_THRESHOLD && scoreDiff >= MIN_POINT_DIFFERENTIAL) {
         this.winner = 1;
         this.phase = 'game_over';
         this.winningEvent = { type: 'core_control', player: 1 };
-        this.log(`Game Over. Player 2 wins (Score ${p1Score} >= ${WIN_THRESHOLD}).`);
+        this.log(`Game Over. Player 2 wins (Core points ${p1Score}, diff ${scoreDiff} >= ${MIN_POINT_DIFFERENTIAL}).`);
         return 1;
     }
 
@@ -650,6 +653,7 @@ export class Game {
     });
 
     this.currentSlot++;
+    this.turnCount++;
     
     if (!this.winner) {
       this.checkWinConditions();
@@ -722,6 +726,7 @@ export class Game {
       })),
       round: this.round,
       currentSlot: this.currentSlot,
+      turnCount: this.turnCount,
       phase: this.phase,
       validMoves: this.getValidMovesForAI(1) // Helper to send valid moves to AI
     };
