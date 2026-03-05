@@ -203,10 +203,15 @@ function renderGameOver() {
     document.body.appendChild(modal);
   }
   
+  const isDraw = game.winner === -1;
   const isP1Win = game.winner === 0;
-  const winnerText = isP1Win ? "VICTORY" : "DEFEAT";
-  const winnerSubText = isP1Win ? "STRATEGIC DOMINANCE ACHIEVED" : "TACTICAL FAILURE DETECTED";
-  const winnerColor = isP1Win ? "text-sky-blue drop-shadow-[0_0_20px_rgba(0,113,164,0.5)]" : "text-traffic-red drop-shadow-[0_0_20px_rgba(203,6,5,0.5)]";
+  const winnerText = isDraw ? "DRAW" : (isP1Win ? "VICTORY" : "DEFEAT");
+  const winnerSubText = isDraw
+    ? "TEMPORAL STALEMATE DECLARED"
+    : (isP1Win ? "STRATEGIC DOMINANCE ACHIEVED" : "TACTICAL FAILURE DETECTED");
+  const winnerColor = isDraw
+    ? "text-yellow-400 drop-shadow-[0_0_20px_rgba(250,204,21,0.35)]"
+    : (isP1Win ? "text-sky-blue drop-shadow-[0_0_20px_rgba(0,113,164,0.5)]" : "text-traffic-red drop-shadow-[0_0_20px_rgba(203,6,5,0.5)]");
 
   modal.innerHTML = `
     <div class="glass-panel p-12 rounded-[2rem] shadow-2xl flex flex-col items-center gap-8 max-w-lg w-full mx-4 relative overflow-hidden ring-1 ring-white/10">
@@ -230,9 +235,11 @@ function renderGameOver() {
       </div>
       
       <div class="text-slate-400 text-center text-[11px] z-10 max-w-xs leading-relaxed tracking-wide">
-        ${isP1Win 
-          ? "You have successfully outmaneuvered the adversary and secured temporal control." 
-          : "The timeline has been compromised. The enemy has seized control of the core."}
+        ${isDraw
+          ? "Neither side secured decisive dominance. The timeline remains contested."
+          : (isP1Win
+            ? "You have successfully outmaneuvered the adversary and secured temporal control."
+            : "The timeline has been compromised. The enemy has seized control of the core.")}
       </div>
 
       <div class="flex flex-col gap-3 w-full mt-4 z-10">
@@ -750,9 +757,11 @@ function renderTimeline() {
 
 function renderInfo() {
   phaseIndicatorEl.textContent = game.phase.toUpperCase();
-  turnIndicatorEl.textContent = game.phase === 'planning' 
+  turnIndicatorEl.textContent = game.phase === 'planning'
     ? `PLAYER ${game.currentPlayerId + 1} PLANNING (SLOT ${game.currentSlot + 1})`
-    : `RESOLVING SLOT ${game.currentSlot + 1}`;
+    : game.phase === 'strategos_decision'
+      ? 'MUTUAL STRATEGOS DECISION PENDING'
+      : `RESOLVING SLOT ${game.currentSlot + 1}`;
   
   turnIndicatorEl.className = game.currentPlayerId === 0 ? 'text-sky-blue' : 'text-traffic-red';
 
@@ -786,6 +795,38 @@ function updateControls() {
     btn.className = 'px-4 py-2 bg-white text-black hover:bg-sky-blue hover:text-white rounded font-bold tracking-wider transition-colors';
     btn.onclick = initGame;
     actionButtonsEl.appendChild(btn);
+    return;
+  }
+
+  if (game.phase === 'strategos_decision') {
+    const prompt = document.createElement('div');
+    prompt.className = 'text-[11px] text-slate-400 leading-relaxed';
+    prompt.textContent = 'Both Strategos units were eliminated. Select your secret choice.';
+    actionButtonsEl.appendChild(prompt);
+
+    const continueBtn = document.createElement('button');
+    continueBtn.textContent = 'CONTINUE';
+    continueBtn.className = 'px-4 py-2 rounded font-bold tracking-wider w-full bg-sky-blue/20 border border-sky-blue text-sky-blue hover:bg-sky-blue hover:text-white';
+    continueBtn.onclick = () => {
+      const ok = game.submitMutualStrategosChoice(0, 'continue');
+      if (ok) {
+        log('Secret choice submitted: CONTINUE.');
+        render();
+      }
+    };
+    actionButtonsEl.appendChild(continueBtn);
+
+    const endBtn = document.createElement('button');
+    endBtn.textContent = 'END';
+    endBtn.className = 'px-4 py-2 rounded font-bold tracking-wider w-full bg-yellow-600/20 border border-yellow-500 text-yellow-300 hover:bg-yellow-500 hover:text-black';
+    endBtn.onclick = () => {
+      const ok = game.submitMutualStrategosChoice(0, 'end');
+      if (ok) {
+        log('Secret choice submitted: END.');
+        render();
+      }
+    };
+    actionButtonsEl.appendChild(endBtn);
     return;
   }
 
