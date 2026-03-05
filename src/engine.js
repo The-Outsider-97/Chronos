@@ -156,6 +156,8 @@ export class Game {
     this.actingUnits = new Set();
     this.winner = null;
     this.winningEvent = null;
+    this.allowStrategoslessPlay = false;
+    this.pendingMutualStrategosDecision = null;
     this.logs = [];
   }
 
@@ -170,17 +172,60 @@ export class Game {
   getCorePoints(playerId) {
     let total = 0;
     const { rows, cols } = CONFIG.board.core;
+    const center = Math.floor(this.board.size / 2);
     for (let r = rows[0]; r <= rows[1]; r++) {
       for (let c = cols[0]; c <= cols[1]; c++) {
         const unit = this.board.getUnitAt(r, c);
         if (unit && unit.playerId === playerId && unit.health > 0) {
-          // Center Core (4,4) is 2x multiplier, others are 1x
-          const multiplier = (r === 4 && c === 4) ? 2 : 1;
+          // Center Core is 2x multiplier, others are 1x
+          const multiplier = (r === center && c === center) ? 2 : 1;
           total += unit.props.value * multiplier;
         }
       }
     }
     return total;
+  }
+
+  startMutualStrategosDecision() {
+    if (this.pendingMutualStrategosDecision) return;
+
+    this.pendingMutualStrategosDecision = {
+      choices: [null, 'continue'] // AI submits in secret immediately.
+    };
+    this.phase = 'strategos_decision';
+    this.log('Both Strategos units were lost. Secret decision phase started (continue/end).');
+  }
+
+  submitMutualStrategosChoice(playerId, choice) {
+    if (!this.pendingMutualStrategosDecision) return false;
+    if (choice !== 'continue' && choice !== 'end') return false;
+
+    this.pendingMutualStrategosDecision.choices[playerId] = choice;
+    const [p0Choice, p1Choice] = this.pendingMutualStrategosDecision.choices;
+    if (!p0Choice || !p1Choice) return true;
+
+    if (p0Choice === 'continue' && p1Choice === 'continue') {
+      this.allowStrategoslessPlay = true;
+      this.pendingMutualStrategosDecision = null;
+      this.phase = this.currentSlot >= 5 ? 'planning' : 'resolution';
+      this.log('Both players chose to continue. Match proceeds without Strategos units.');
+      if (this.currentSlot >= 5 && !this.winner) {
+        this.endRound();
+      }
+      return true;
+    }
+
+    if (p0Choice === 'end' && p1Choice === 'end') {
+      this.winner = -1;
+      this.phase = 'game_over';
+      this.log('Game Over. Draw (Both players chose to end after mutual Strategos elimination).');
+      return true;
+    }
+
+    this.winner = p0Choice === 'continue' ? 0 : 1;
+    this.phase = 'game_over';
+    this.log(`Game Over. Player ${this.winner + 1} wins (Opponent chose to end after mutual Strategos elimination).`);
+    return true;
   }
 
   checkWinConditions() {
@@ -189,10 +234,10 @@ export class Game {
     const p1Strategos = this.players[1].units.find(u => u.type === 'Strategos' && u.health > 0);
 
     if (!p0Strategos && !p1Strategos) {
-        this.winner = -1; // Draw
-        this.phase = 'game_over';
-        this.log("Game Over. Draw (Mutual Strategos Elimination).");
-        return -1;
+        if (!this.allowStrategoslessPlay) {
+          this.startMutualStrategosDecision();
+        }
+        return null;
     } else if (!p0Strategos) {
         this.winner = 1;
         this.phase = 'game_over';
