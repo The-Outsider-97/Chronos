@@ -760,10 +760,10 @@ function renderTimeline() {
 function renderInfo() {
   phaseIndicatorEl.textContent = game.phase.toUpperCase();
   turnIndicatorEl.textContent = game.phase === 'planning'
-    ? `PLAYER ${game.currentPlayerId + 1} PLANNING (SLOT ${game.currentSlot + 1})`
+    ? `PLAYER ${game.currentPlayerId + 1} PLANNING (SLOT ${Math.min(game.currentSlot + 1, game.timeline.length)} / ${game.timeline.length})`
     : game.phase === 'strategos_decision'
       ? 'MUTUAL STRATEGOS DECISION PENDING'
-      : `RESOLVING SLOT ${game.currentSlot + 1}`;
+      : `RESOLVING SLOT ${Math.min(game.currentSlot + 1, game.timeline.length)} / ${game.timeline.length}`;
   
   turnIndicatorEl.className = game.currentPlayerId === 0 ? 'text-sky-blue' : 'text-traffic-red';
 
@@ -920,7 +920,9 @@ function updateControls() {
 
   const activeHumanUnits = humanPlayer.getActiveUnits(game.round).filter(u => !actedUnits.has(u));
 
-  if (selectedToken) {
+  const reducedActionMode = game.requiredActionsPerPlayer[0] < 5;
+
+  if (selectedToken && !reducedActionMode) {
     const passBtn = document.createElement('button');
     passBtn.textContent = 'PASS TURN';
     passBtn.className = 'px-4 py-2 rounded font-bold tracking-wider w-full bg-slate-700 hover:bg-slate-600 text-white';
@@ -939,7 +941,9 @@ function updateControls() {
     const hint = document.createElement('div');
     hint.textContent = activeHumanUnits.length
       ? "Select a unit to act."
-      : "No units can act this slot. Select a token and use PASS TURN.";
+      : (reducedActionMode
+        ? "Fewer than 5 active pieces: each remaining piece must act this round."
+        : "No units can act this slot. Select a token and use PASS TURN.");
     hint.className = "text-slate-400 text-sm text-center italic";
     actionButtonsEl.appendChild(hint);
     return;
