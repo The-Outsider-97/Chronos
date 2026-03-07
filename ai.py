@@ -125,8 +125,7 @@ class AIPlayer:
                     # Prevent repeated scheduler/validation error spam for subsequent turns.
                     self.planning_enabled = False
 
-            # 3. Execution: Score each valid move and select the best one
-            # We'll use the ExecutionAgent's action selector logic conceptually
+            # 3. Execution: bridge high-level plan to concrete action selection.
             board_size = self._board_size(game_state)
             self._adapt_style_for_board(board_size)
             opening_move = self._select_opening_pattern_move(valid_moves, game_state)
@@ -134,16 +133,13 @@ class AIPlayer:
                 logger.info(f"AI selected opening pattern move: {opening_move}")
                 return opening_move
 
-            best_move = None
-            max_score = -float('inf')
-
-            for move in valid_moves:
-                score = self._score_move(move, game_state, strategy_context, plan)
-                if score > max_score:
-                    max_score = score
-                    best_move = move
-
-            logger.info(f"AI selected move with score {max_score}: {best_move}")
+            best_move, best_score = self._select_move_via_execution_agent(
+                valid_moves=valid_moves,
+                game_state=game_state,
+                strategy_context=strategy_context,
+                plan=plan,
+            )
+            logger.info(f"AI selected move with score {best_score}: {best_move}")
             return best_move
 
         except Exception as e:
@@ -276,6 +272,112 @@ class AIPlayer:
         score += random.uniform(0, 5)
         
         return score
+
+    def _select_move_via_execution_agent(self, valid_moves, game_state, strategy_context, plan):
+        """
+        Use the execution agent as the low-level selector between candidate moves.
+        Falls back to direct heuristic scoring if execution subsystems are unavailable.
+        """
+        if not isinstance(valid_moves, list) or not valid_moves:
+            return None, -float('inf')
+
+        move_scores = []
+        for index, move in enumerate(valid_moves):
+            score = self._score_move(move, game_state, strategy_context, plan)
+            move_scores.append((index, move, score))
+
+        # Persist scored candidates for transparency and downstream learning.
+        self.shared_memory.set(
+            "execution_move_candidates",
+            [
+                {
+                    "index": idx,
+                    "move": candidate,
+                    "score": score,
+                }
+                for idx, candidate, score in move_scores
+            ],
+        )
+
+        # If execution agent is missing, deterministic fallback to max-score move.
+        if not getattr(self, 'execution_agent', None):
+            best_index, best_move, best_score = max(move_scores, key=lambda item: item[2])
+            return best_move, best_score
+
+        execution_context = self._build_execution_context(game_state, strategy_context, plan, move_scores)
+        action_candidates = [
+            {
+                "name": f"move_{idx}",
+                "priority": max(1, int(score)),
+                "preconditions": [],
+                "move_index": idx,
+            }
+            for idx, _move, score in move_scores
+        ]
+
+        try:
+            selected = self.execution_agent.action_selector.select(action_candidates, execution_context)
+            selected_index = selected.get("move_index")
+            if selected_index is None and isinstance(selected.get("name"), str) and selected["name"].startswith("move_"):
+                selected_index = int(selected["name"].split("_", 1)[1])
+
+            if isinstance(selected_index, int):
+                for idx, candidate_move, score in move_scores:
+                    if idx == selected_index:
+                        self.shared_memory.set("execution_last_selection", {"index": idx, "score": score})
+                        return candidate_move, score
+        except Exception as exec_error:
+            logger.warning(f"Execution Agent action selection failed, falling back to heuristic ranking: {exec_error}")
+
+        best_index, best_move, best_score = max(move_scores, key=lambda item: item[2])
+        self.shared_memory.set("execution_last_selection", {"index": best_index, "score": best_score, "fallback": True})
+        return best_move, best_score
+
+    def _build_execution_context(self, game_state, strategy_context, plan, move_scores):
+        """Compose a compact context payload used by the execution action selector."""
+        plan_signals = self._extract_plan_signals(plan)
+        knowledge_signals = self._extract_knowledge_signals(strategy_context)
+
+        top_score = max((score for _idx, _move, score in move_scores), default=0.0)
+        avg_score = (sum(score for _idx, _move, score in move_scores) / len(move_scores)) if move_scores else 0.0
+
+        return {
+            "energy": 10.0,
+            "max_energy": 10.0,
+            "has_destination": True,
+            "object_detected": False,
+            "hand_empty": True,
+            "holding_object": False,
+            "time_critical": False,
+            "round": game_state.get("round", 0),
+            "board_size": self._board_size(game_state),
+            "top_candidate_score": top_score,
+            "average_candidate_score": avg_score,
+            "knowledge_signals": knowledge_signals,
+            "plan_signals": plan_signals,
+        }
+
+    def _extract_plan_signals(self, plan):
+        if not isinstance(plan, list):
+            return {"step_count": 0, "action_bias": {}}
+
+        action_bias = {}
+        for step in plan:
+            step_name = getattr(step, "name", None)
+            if isinstance(step_name, str):
+                action_bias[step_name] = action_bias.get(step_name, 0) + 1
+        return {"step_count": len(plan), "action_bias": action_bias}
+
+    def _extract_knowledge_signals(self, strategy_context):
+        if not isinstance(strategy_context, str):
+            return {"aggressive": False, "core_control": False, "protect": False}
+
+        text = strategy_context.lower()
+        return {
+            "aggressive": "aggressive" in text,
+            "core_control": "core control" in text,
+            "protect": "protect" in text,
+        }
 
     def _build_unit_and_board_maps(self, game_state):
         unit_map = {}
