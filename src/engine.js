@@ -554,9 +554,14 @@ export class Game {
     unitsToKill.forEach(u => this.board.removeUnit(u));
 
     // 2. Resolve Moves
+    const isUnitPresentAndAlive = (unit) => {
+      if (!unit || unit.health <= 0) return false;
+      return this.board.getUnitAt(unit.row, unit.col) === unit;
+    };
+
     const moveRequests = [];
     [p0Act, p1Act].forEach(act => {
-      if (act && act.type === ActionType.MOVE && act.unit.health > 0) {
+      if (act && act.type === ActionType.MOVE && isUnitPresentAndAlive(act.unit)) {
         let nr, nc;
         if (act.params.target) {
           nr = act.params.target.r;
@@ -566,7 +571,7 @@ export class Game {
           nr = act.unit.row + (dr * act.unit.props.movement);
           nc = act.unit.col + (dc * act.unit.props.movement);
         }
-        
+
         if (nr >= 0 && nr < this.board.size && nc >= 0 && nc < this.board.size) {
            moveRequests.push({ unit: act.unit, nr, nc });
         }
@@ -578,6 +583,10 @@ export class Game {
     const movingUnitsSet = new Set(moveRequests.map(m => m.unit));
 
     moveRequests.forEach(req => {
+      if (!isUnitPresentAndAlive(req.unit)) {
+        results.push(`${req.unit.id} cannot move (already removed).`);
+        return;
+      }
       // Check path (Jumping enemies forbidden, jumping friendlies allowed)
       const pathClear = this.board.pathClear(req.unit, req.nr, req.nc, movingUnitsSet);
       
@@ -608,8 +617,10 @@ export class Game {
     // Destination Collision Check
     const destMap = new Map(); // "r,c" -> [unit]
     
+
     // Add moving units to map
     validMoves.forEach(req => {
+      if (!isUnitPresentAndAlive(req.unit)) return;
       const key = `${req.nr},${req.nc}`;
       if (!destMap.has(key)) destMap.set(key, []);
       destMap.get(key).push(req.unit);
@@ -626,75 +637,84 @@ export class Game {
         }
     });
 
+    const awardCollisionElimination = (unit) => {
+      if (!unit || unit.health <= 0) return;
+      const killerId = unit.playerId === 0 ? 1 : 0;
+      const points = unit.props.is_commander ? 50 : 10;
+      this.players[killerId].score += points;
+      results.push(`Player ${killerId + 1} gains ${points} points.`);
+    };
+
+    const eliminateUnits = (unitsToEliminate) => {
+      unitsToEliminate.forEach((unit) => {
+        if (!unit || unit.health <= 0) return;
+        unit.health = 0;
+        this.board.removeUnit(unit);
+        results.push(`${unit.id} destroyed in collision.`);
+        if (unit.props.is_commander) {
+          this.winningEvent = { type: 'assassination', victim: unit, attacker: null };
+        }
+        awardCollisionElimination(unit);
+      });
+    };
+
     destMap.forEach((units, key) => {
       const [r, c] = key.split(',').map(Number);
-      if (units.length === 1) {
+      const liveUnits = units.filter(u => isUnitPresentAndAlive(u));
+      if (!liveUnits.length) return;
+
+      if (liveUnits.length === 1) {
         // Single unit moves successfully
-        const u = units[0];
+        const u = liveUnits[0];
         const req = validMoves.find(m => m.unit === u);
-        if (req) {
+        if (req && isUnitPresentAndAlive(u)) {
             this.board.moveUnit(u, r, c);
             results.push(`${u.id} moved to (${r}, ${c}).`);
         }
       } else {
         // Collision: Resolve based on types and "Strategos Exception"
-        const p0Units = units.filter(u => u.playerId === 0);
-        const p1Units = units.filter(u => u.playerId === 1);
+        const p0Units = liveUnits.filter(u => u.playerId === 0);
+        const p1Units = liveUnits.filter(u => u.playerId === 1);
         
         if (p0Units.length > 0 && p1Units.length > 0) {
             // Enemy Collision
             const eliminated = new Set();
-            
-            // Strategos Exception check
-            const movingStrategos = units.filter(u => u.type === 'Strategos' && movingUnitsSet.has(u));
-            const enemiesOfMovingStrategos = units.filter(u => {
-                if (u.type === 'Strategos') return false;
-                return movingStrategos.some(ms => ms.playerId !== u.playerId);
-            });
 
-            if (movingStrategos.length > 0 && enemiesOfMovingStrategos.length > 0) {
-                // Strategos Exception applies: Strategos dies, Scout survives.
-                movingStrategos.forEach(ms => eliminated.add(ms));
-                results.push("Strategos Exception: Player who moved Strategos into enemy loses the Strategos.");
+            const movingUnits = liveUnits.filter(u => movingUnitsSet.has(u));
+            const stationaryUnits = liveUnits.filter(u => !movingUnitsSet.has(u));
+
+            // Moving-vs-moving: always eliminate all moving enemy units (fixes scout mirror-collision determinism)
+            if (movingUnits.length > 1) {
+              const movingPlayers = new Set(movingUnits.map(u => u.playerId));
+              if (movingPlayers.size > 1) {
+                movingUnits.forEach(u => eliminated.add(u));
+              }
             }
 
-            // Braced Rule & General Collision
-            units.forEach(u => {
-                if (eliminated.has(u)) return;
-                const isMoving = movingUnitsSet.has(u);
-                const stationaryEnemies = units.filter(other => other.playerId !== u.playerId && !movingUnitsSet.has(other));
-                const movingEnemies = units.filter(other => other.playerId !== u.playerId && movingUnitsSet.has(other));
-
-                if (isMoving) {
-                    if (stationaryEnemies.length > 0) {
-                        // Moving unit lands on stationary enemy (Braced)
-                        if (u.type !== 'Strategos') {
-                            eliminated.add(u);
-                            stationaryEnemies.forEach(se => eliminated.add(se));
-                            results.push(`${u.id} collided with stationary enemy. Both eliminated.`);
-                        }
-                    } else if (movingEnemies.length > 0) {
-                        // Both moving to same tile
-                        if (u.type !== 'Strategos') {
-                            movingEnemies.forEach(me => {
-                                if (me.type !== 'Strategos') {
-                                    eliminated.add(u);
-                                    eliminated.add(me);
-                                }
-                            });
-                        } else {
-                            // Moving Strategos into moving enemy is already handled or Strategos dies
-                            eliminated.add(u);
-                        }
-                    }
+            // Moving-vs-stationary (Braced): both sides eliminated.
+            if (movingUnits.length > 0 && stationaryUnits.length > 0) {
+              movingUnits.forEach(u => {
+                const hasStationaryEnemy = stationaryUnits.some(other => other.playerId !== u.playerId);
+                if (hasStationaryEnemy) {
+                  eliminated.add(u);
+                  stationaryUnits
+                    .filter(other => other.playerId !== u.playerId)
+                    .forEach(other => eliminated.add(other));
                 }
+              });
+            }
+
+            // Strategos exception still applies: moved Strategos into enemy tile is sacrificed.
+            const movingStrategos = movingUnits.filter(u => u.type === 'Strategos');
+            movingStrategos.forEach(ms => {
+              const hasEnemy = liveUnits.some(u => u.playerId !== ms.playerId);
+              if (hasEnemy) {
+                eliminated.add(ms);
+                results.push("Strategos Exception: Player who moved Strategos into enemy loses the Strategos.");
+              }
             });
 
-            // Final elimination
-            eliminated.forEach(u => {
-                u.health = 0;
-                this.board.removeUnit(u);
-            });
+            eliminateUnits(eliminated);
         } else {
             // Friendly Collision: Bounce back (no movement)
             results.push("Friendly collision! Moves cancelled.");
