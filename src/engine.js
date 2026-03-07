@@ -40,7 +40,9 @@ class Board {
   }
 
   moveUnit(unit, newRow, newCol) {
-    this.grid[unit.row][unit.col] = null;
+    if (this.grid[unit.row][unit.col] === unit) {
+      this.grid[unit.row][unit.col] = null;
+    }
     unit.row = newRow;
     unit.col = newCol;
     this.grid[newRow][newCol] = unit;
@@ -59,28 +61,41 @@ class Board {
   }
 
   pathClear(unit, targetRow, targetCol, movingUnits = new Set()) {
-    const dr = targetRow - unit.row;
-    const dc = targetCol - unit.col;
-    const steps = Math.max(Math.abs(dr), Math.abs(dc));
-    
-    if (steps === 0) return true;
-
-    const stepR = dr === 0 ? 0 : dr / steps;
-    const stepC = dc === 0 ? 0 : dc / steps;
-
-    let r = unit.row;
-    let c = unit.col;
-
-    for (let i = 1; i < steps; i++) {
-      r += stepR;
-      c += stepC;
-      const occupant = this.getUnitAt(Math.round(r), Math.round(c));
-      // Friendly jumping allowed: Only block if occupant is enemy
-      if (occupant && occupant.playerId !== unit.playerId && !movingUnits.has(occupant)) {
-        return false;
+      const r1 = unit.row, c1 = unit.col;
+      const r2 = targetRow, c2 = targetCol;
+      if (r1 === r2 && c1 === c2) return true;
+  
+      // Bresenham line algorithm to get all cells on the line
+      const cells = [];
+      let dr = Math.abs(r2 - r1);
+      let dc = Math.abs(c2 - c1);
+      let sr = r1 < r2 ? 1 : -1;
+      let sc = c1 < c2 ? 1 : -1;
+      let err = dr - dc;
+      let r = r1, c = c1;
+      while (r !== r2 || c !== c2) {
+          cells.push([r, c]);
+          let e2 = 2 * err;
+          if (e2 > -dc) {
+              err -= dc;
+              r += sr;
+          }
+          if (e2 < dr) {
+              err += dr;
+              c += sc;
+          }
       }
-    }
-    return true;
+      cells.push([r2, c2]);
+  
+      // Check intermediate cells (excluding start and end)
+      for (let i = 1; i < cells.length - 1; i++) {
+          const [cr, cc] = cells[i];
+          const occupant = this.getUnitAt(cr, cc);
+          if (occupant && occupant.playerId !== unit.playerId && !movingUnits.has(occupant)) {
+              return false; // enemy blocks
+          }
+      }
+      return true;
   }
 }
 
@@ -253,7 +268,7 @@ export class Game {
     if (this.pendingMutualStrategosDecision) return;
 
     this.pendingMutualStrategosDecision = {
-      choices: [null, 'continue'] // AI submits in secret immediately.
+      choices: [null, null] // AI submits in secret immediately.
     };
     this.phase = 'strategos_decision';
     this.log('Both Strategos units were lost. Secret decision phase started (continue/end).');
@@ -292,7 +307,16 @@ export class Game {
   }
 
   checkWinConditions() {
+    const p0Units = this.players[0].units.filter(u => u.health > 0).length;
+    const p1Units = this.players[1].units.filter(u => u.health > 0).length;
+    if (p0Units === 0 && p1Units === 0) {
+        this.winner = -1;
+        this.phase = 'game_over';
+        this.log("Game Over. Draw (No units left).");
+        return -1;
+    }
     // 1. Strategos death
+
     const p0Strategos = this.players[0].units.find(u => u.type === 'Strategos' && u.health > 0);
     const p1Strategos = this.players[1].units.find(u => u.type === 'Strategos' && u.health > 0);
 
@@ -794,10 +818,10 @@ export class Game {
         id: u.id,
         type: u.type,
         owner: u.playerId,
-        r: u.r,
-        c: u.c,
-        hp: u.hp,
-        fatigue: u.fatigue
+        r: u.row,
+        c: u.col,
+        hp: u.health,
+        fatigue: u.fatigueUntilRound
       })),
       players: this.players.map(p => ({
         id: p.id,
