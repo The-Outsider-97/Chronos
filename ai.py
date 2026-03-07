@@ -100,6 +100,12 @@ class AIPlayer:
                         }
                     )
 
+                    phase = game_state.get('phase')
+                    if phase == 'strategos_decision':
+                        # Simple heuristic: continue if AI has more pieces or core points
+                        # For now, always choose 'continue'
+                        return {'choice': 'continue'}
+
                     # Register only once to avoid noisy duplicate-registration warnings.
                     if (
                         not self._planning_task_registered
@@ -175,9 +181,12 @@ class AIPlayer:
 
         # 1. Core Control (High Priority)
         # Multipliers: Center = 2x, Adjacent = 1x
-        if tr == 4 and tc == 4:
+        # Use dynamic center instead of hardcoded 4
+        board_size = self._board_size(game_state)
+        center = board_size // 2
+        if tr == center and tc == center:
             score += 100 * self._style_weights["core_control"]
-        elif self._is_core_cell(tr, tc, self._board_size(game_state)):
+        elif self._is_core_cell(tr, tc, board_size):
             score += 40 * self._style_weights["core_control"]
             
         # 2. Attack (High Priority)
