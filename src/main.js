@@ -1,6 +1,7 @@
 import { Game } from './engine.js';
 import { CONFIG, ActionType, BOARD_VARIANTS, applyBoardSize } from './constants.js';
 import { GoogleGenAI } from "@google/genai";
+import { mountPageBackgroundLights } from './pageBackgroundLights.js';
 
 let game;
 let selectedUnit = null;
@@ -31,6 +32,8 @@ const rightCoordsEl = document.getElementById('board-right-coords');
 const SCOREBOARD_STORAGE_KEY = 'chronos_scoreboard_history_v1';
 let activeSidePanel = 'comms';
 let sidePanelHidden = false;
+
+mountPageBackgroundLights();
 
 function initGame(boardSize = CONFIG.board.size) {
   applyBoardSize(boardSize);
