@@ -78,9 +78,80 @@ body {
 
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  50% { opacity: 0.8; }
 }
 
 .animate-pulse-soft {
   animation: pulse-soft 2s infinite;
+}
+
+.page-bg-lights {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.03), transparent 55%);
+}
+
+.page-bg-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(rgba(239, 239, 239, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(239, 239, 239, 0.12) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.8), transparent 88%);
+}
+
+.page-bg-beam {
+  position: absolute;
+  width: 200vw;          /* Cover entire viewport width */
+  height: 200vh;         /* Cover entire viewport height */
+  max-width: none;
+  max-height: none;
+  border-radius: 999px;
+  filter: blur(150px);   /* More blur for a diffused glow */
+  opacity: 0.6;          /* Slightly lower for subtlety */
+  mix-blend-mode: screen;
+}
+
+.page-bg-beam--sky {
+  background: radial-gradient(circle at 30% 50%, rgba(0, 113, 164, 0.5), rgba(0, 113, 164, 0.05) 60%, transparent 100%);
+  animation: drift-sky 16s linear infinite;
+}
+
+.page-bg-beam--red {
+  background: radial-gradient(circle at 70% 50%, rgba(203, 6, 5, 0.42), rgba(203, 6, 5, 0.05) 68%, transparent 100%);
+  animation: drift-red 20s linear infinite;
+}
+
+@keyframes drift-sky {
+  0% {
+    transform: translate(-80vw, -30vh) rotate(-12deg);
+  }
+  50% {
+    transform: translate(80vw, 40vh) rotate(12deg);
+  }
+  100% {
+    transform: translate(-80vw, -30vh) rotate(-12deg);
+  }
+}
+
+@keyframes drift-red {
+  0% {
+    transform: translate(80vw, 50vh) rotate(15deg);
+  }
+  50% {
+    transform: translate(-70vw, 10vh) rotate(-10deg);
+  }
+  100% {
+    transform: translate(80vw, 50vh) rotate(15deg);
+  }
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
 }
