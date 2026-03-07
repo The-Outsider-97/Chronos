@@ -33,6 +33,7 @@ const SCOREBOARD_STORAGE_KEY = 'chronos_scoreboard_history_v1';
 const SCOREBOARD_MAX_MATCHES = 200;
 let activeSidePanel = 'comms';
 let sidePanelHidden = false;
+let aiStrategosSubmitted = false;
 
 mountPageBackgroundLights();
 
@@ -62,13 +63,81 @@ function renderBoardCoordinates() {
   rightCoordsEl.innerHTML = Array.from({ length: size }, (_, idx) => `<div class="flex-1 flex items-center justify-center">${size - idx}</div>`).join('');
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
 
-function computeFinalScore({ p1Points, p2Points, turnCount, winnerLabel }) {
-  const pointDiff = p1Points - p2Points;
-  const normalizedPoints = Math.max(-40, Math.min(40, pointDiff * 8));
-  const roundFactor = Math.max(-20, Math.min(20, (12 - (turnCount ?? 12)) * 2));
-  const outcomeBias = winnerLabel === 'Player 1' ? 40 : winnerLabel === 'Player 2' ? -40 : 0;
-  return Math.max(-100, Math.min(100, normalizedPoints + roundFactor + outcomeBias));
+function computeMatchScoreBreakdown({ p1Points, p2Points, turnCount, winnerLabel, p1PiecesLeft = 0, p2PiecesLeft = 0, centerControl = null }) {
+  const rawPointDiff = (p1Points || 0) - (p2Points || 0);
+  const pointDiffContribution = clamp(rawPointDiff * 8, -40, 40);
+
+  const roundsUsed = Number.isFinite(turnCount) ? turnCount : 12;
+  const roundContribution = clamp((12 - roundsUsed) * 2, -20, 20);
+  const outcomeContribution = winnerLabel === 'Player 1' ? 40 : winnerLabel === 'Player 2' ? -40 : 0;
+
+  const pieceDiff = (p1PiecesLeft || 0) - (p2PiecesLeft || 0);
+  const pieceContribution = clamp(pieceDiff * 4, -24, 24);
+
+  const centerContribution = centerControl?.playerId === 0
+    ? centerControl.scoreWeight
+    : centerControl?.playerId === 1
+      ? -centerControl.scoreWeight
+      : 0;
+
+  const total = clamp(
+    pointDiffContribution + roundContribution + outcomeContribution + pieceContribution + centerContribution,
+    -100,
+    100
+  );
+
+  return {
+    rawPointDiff,
+    finalScore: total,
+    contributions: {
+      pointDiffContribution,
+      roundContribution,
+      outcomeContribution,
+      pieceContribution,
+      centerContribution
+    }
+  };
+}
+
+function getCenterControl(gameRef) {
+  const center = Math.floor(CONFIG.board.size / 2);
+  const centerUnit = gameRef.board.getUnitAt(center, center);
+  if (!centerUnit || centerUnit.health <= 0) {
+    return {
+      playerId: null,
+      pieceType: null,
+      scoreWeight: 0,
+      label: 'None'
+    };
+  }
+
+  return {
+    playerId: centerUnit.playerId,
+    pieceType: centerUnit.type,
+    scoreWeight: centerUnit.props.value * 6,
+    label: `Player ${centerUnit.playerId + 1} (${centerUnit.type})`
+  };
+}
+
+function buildScoreTooltip(entry) {
+  const piecesLine = `${entry.p1PiecesLeft ?? 0}-${entry.p2PiecesLeft ?? 0} = ${(entry.p1PiecesLeft ?? 0) - (entry.p2PiecesLeft ?? 0)}`;
+  return [
+    `Point Diff = ${entry.p1Points} - ${entry.p2Points} = ${entry.pointDifference}`,
+    `Final Score (P1) = clamp(-100..100, PointDiffTerm + RoundsTerm + OutcomeTerm + PieceTerm + CenterTerm)`,
+    `PointDiffTerm: (${entry.pointDifference}) * 8 => ${entry.scoreBreakdown?.pointDiffContribution ?? 0}`,
+    `RoundsTerm: (12 - ${entry.turnCount ?? 0}) * 2 => ${entry.scoreBreakdown?.roundContribution ?? 0}`,
+    `OutcomeTerm: ${entry.winner} => ${entry.scoreBreakdown?.outcomeContribution ?? 0}`,
+    `PieceTerm: (${piecesLine}) * 4 => ${entry.scoreBreakdown?.pieceContribution ?? 0}`,
+    `CenterTerm: ${entry.centerCoreOccupant || 'None'} => ${entry.scoreBreakdown?.centerContribution ?? 0}`
+  ].join('\n');
+}
+
+function computeFinalScore(args) {
+  return computeMatchScoreBreakdown(args).finalScore;
 }
 
 function computeAiReward(finalScore) {
@@ -130,8 +199,31 @@ function renderScoreboardPanel() {
               p1Points: Number(entry.p1Points) || 0,
               p2Points: Number(entry.p2Points) || 0,
               turnCount: Number(entry.turnCount) || 0,
-              winnerLabel: entry.winner || 'Draw'
+              winnerLabel: entry.winner || 'Draw',
+              p1PiecesLeft: Number(entry.p1PiecesLeft) || 0,
+              p2PiecesLeft: Number(entry.p2PiecesLeft) || 0,
+              centerControl: {
+                playerId: entry.centerCoreOwner ?? null,
+                scoreWeight: Number(entry.centerCoreWeight) || 0
+              }
             });
+        const tooltip = buildScoreTooltip({
+          ...entry,
+          finalScore: displayFinalScore,
+          pointDifference: Number(entry.pointDifference) || 0,
+          scoreBreakdown: entry.scoreBreakdown || computeMatchScoreBreakdown({
+            p1Points: Number(entry.p1Points) || 0,
+            p2Points: Number(entry.p2Points) || 0,
+            turnCount: Number(entry.turnCount) || 0,
+            winnerLabel: entry.winner || 'Draw',
+            p1PiecesLeft: Number(entry.p1PiecesLeft) || 0,
+            p2PiecesLeft: Number(entry.p2PiecesLeft) || 0,
+            centerControl: {
+              playerId: entry.centerCoreOwner ?? null,
+              scoreWeight: Number(entry.centerCoreWeight) || 0
+            }
+          }).contributions
+        });
         return `
           <div class="rounded-xl border border-white/10 bg-black/30 p-3 flex flex-col gap-2">
             <div class="flex items-center justify-between">
@@ -140,9 +232,11 @@ function renderScoreboardPanel() {
             </div>
             <div class="text-[11px]"><span class="text-slate-500">Winner:</span> <span class="font-bold ${winnerClass}">${entry.winner}</span></div>
             <div class="text-[11px]"><span class="text-slate-500">Points (P1/P2):</span> <span class="font-mono text-white">${entry.p1Points} / ${entry.p2Points}</span></div>
-            <div class="text-[11px]"><span class="text-slate-500">Point Diff:</span> <span class="font-mono text-white">${entry.pointDifference}</span></div>
+            <div class="text-[11px]" title="${tooltip}"><span class="text-slate-500">Point Diff:</span> <span class="font-mono text-white">${entry.pointDifference}</span></div>
             <div class="text-[11px]"><span class="text-slate-500">Rounds:</span> <span class="font-mono text-white">${entry.turnCount ?? '-'}</span></div>
-            <div class="text-[11px]"><span class="text-slate-500">Final Score (P1):</span> <span class="font-mono ${displayFinalScore >= 0 ? 'text-sky-blue' : 'text-traffic-red'}">${displayFinalScore}</span></div>
+            <div class="text-[11px]" title="${tooltip}"><span class="text-slate-500">Final Score (P1):</span> <span class="font-mono ${displayFinalScore >= 0 ? 'text-sky-blue' : 'text-traffic-red'}">${displayFinalScore}</span></div>
+            <div class="text-[11px]"><span class="text-slate-500">Pieces Left (P1/P2):</span> <span class="font-mono text-white">${entry.p1PiecesLeft ?? 0} / ${entry.p2PiecesLeft ?? 0}</span></div>
+            <div class="text-[11px]"><span class="text-slate-500">Center Core Occupant:</span> <span class="text-white">${entry.centerCoreOccupant || 'None'}</span></div>
             <div class="text-[11px]"><span class="text-slate-500">Center Core Captured:</span> <span class="text-white">${entry.centerCoreCaptured ? 'Yes' : 'No'}</span></div>
           </div>
         `;
@@ -180,6 +274,11 @@ function log(msg) {
 }
 
 function render() {
+  // Reset AI strategos flag if we are no longer in that phase
+  if (game.phase !== 'strategos_decision') {
+    aiStrategosSubmitted = false;
+  }
+
   renderBoard();
   renderTimeline();
   renderInfo();
@@ -189,36 +288,77 @@ function render() {
     if (!document.getElementById('game-over-modal') && !window.gameOverTimer) {
       // Delay showing the modal to let the user see the final state (winning move)
       window.gameOverTimer = setTimeout(() => {
-         renderGameOver();
-         window.gameOverTimer = null;
+        renderGameOver();
+        window.gameOverTimer = null;
       }, 2500);
     }
   } else {
     const modal = document.getElementById('game-over-modal');
     if (modal) modal.remove();
     if (window.gameOverTimer) {
-        clearTimeout(window.gameOverTimer);
-        window.gameOverTimer = null;
+      clearTimeout(window.gameOverTimer);
+      window.gameOverTimer = null;
     }
   }
+
+  // If we just entered strategos decision, let the AI choose once
+  if (game.phase === 'strategos_decision' && !aiStrategosSubmitted) {
+    aiStrategosChoice();
+  }
+}
+
+async function aiStrategosChoice() {
+    aiStrategosSubmitted = true;
+    try {
+        const state = game.serialize();
+        const response = await fetch('/api/ai/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(state)
+        });
+        const data = await response.json();
+        if (data.choice) {
+            game.submitMutualStrategosChoice(1, data.choice);
+            log(`AI chose ${data.choice}.`);
+            render();
+        }
+    } catch (e) {
+        console.error("AI strategos error:", e);
+        // Fallback to continue
+        game.submitMutualStrategosChoice(1, 'continue');
+        log("AI defaulted to CONTINUE.");
+        render();
+    } finally {
+        aiStrategosSubmitted = false; // reset for next possible occurrence
+    }
 }
 
 function renderGameOver() {
   reportGameResult();
   const p1Score = game.getCorePoints(0);
   const p2Score = game.getCorePoints(1);
+  const p1PiecesLeft = game.players[0].units.filter(u => u.health > 0).length;
+  const p2PiecesLeft = game.players[1].units.filter(u => u.health > 0).length;
 
+  const centerControl = getCenterControl(game);
   const center = Math.floor(CONFIG.board.size / 2);
   const centerUnit = game.board.getUnitAt(center, center);
   const centerCoreCaptured = Boolean(centerUnit && centerUnit.health > 0 && centerUnit.playerId === game.winner);
   const winnerLabel = game.winner === 0 ? 'Player 1' : game.winner === 1 ? 'Player 2' : 'Draw';
-  const pointDifference = Math.abs(p1Score - p2Score);
-  const finalScore = computeFinalScore({ p1Points: p1Score, p2Points: p2Score, turnCount: game.turnCount, winnerLabel });
+  const scoreBreakdown = computeMatchScoreBreakdown({ p1Points: p1Score, p2Points: p2Score, turnCount: game.turnCount, winnerLabel, p1PiecesLeft, p2PiecesLeft, centerControl });
+  const pointDifference = scoreBreakdown.rawPointDiff;
+  const finalScore = scoreBreakdown.finalScore;
   saveMatchRecord({
     winner: winnerLabel,
     p1Points: p1Score,
     p2Points: p2Score,
     pointDifference,
+    p1PiecesLeft,
+    p2PiecesLeft,
+    centerCoreOwner: centerControl.playerId,
+    centerCoreWeight: centerControl.scoreWeight,
+    centerCoreOccupant: centerControl.label,
+    scoreBreakdown: scoreBreakdown.contributions,
     centerCoreCaptured,
     turnCount: game.turnCount,
     finalScore,
@@ -297,8 +437,11 @@ async function reportGameResult() {
     
     const p1Score = game.getCorePoints(0);
     const p2Score = game.getCorePoints(1);
+    const p1PiecesLeft = game.players[0].units.filter(u => u.health > 0).length;
+    const p2PiecesLeft = game.players[1].units.filter(u => u.health > 0).length;
+    const centerControl = getCenterControl(game);
     const winnerLabel = winnerId === 0 ? 'Player 1' : winnerId === 1 ? 'Player 2' : 'Draw';
-    const finalScore = computeFinalScore({ p1Points: p1Score, p2Points: p2Score, turnCount: game.turnCount, winnerLabel });
+    const finalScore = computeFinalScore({ p1Points: p1Score, p2Points: p2Score, turnCount: game.turnCount, winnerLabel, p1PiecesLeft, p2PiecesLeft, centerControl });
 
     const payload = {
         outcome: outcome,
