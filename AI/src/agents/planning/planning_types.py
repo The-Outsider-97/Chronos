@@ -352,14 +352,28 @@ class Task:
             id=self.id,
             name=self.name,
             task_type=self.task_type,
+            status=self.status,
+            deadline=self.deadline,
+            priority=self.priority,
+            resource_requirements=ResourceProfile(
+                gpu=self.resource_requirements.gpu,
+                ram=self.resource_requirements.ram,
+                specialized_hardware=self.resource_requirements.specialized_hardware.copy(),
+            ),
+            start_time=self.start_time,
+            end_time=self.end_time,
             methods=self.methods,
             preconditions=self.preconditions,
             effects=self.effects,
+            selected_method=self.selected_method,
             cost=self.cost,
             goal_state=self.goal_state,
+            duration=self.duration,
             is_probabilistic=self.is_probabilistic,
             probabilistic_actions=self.probabilistic_actions.copy(),
             success_threshold=self.success_threshold,
+            risk_score=self.risk_score,
+            dependencies=self.dependencies.copy(),
             description=self.description,
             owner=self.owner,
             required_skills=self.required_skills.copy(),
@@ -566,3 +580,4 @@ if __name__ == "__main__":
         print(f"Caught expected type error: {e}")
 
     print("\n=== Simulation Complete ===")
+
