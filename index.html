@@ -4,47 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>R-Games Launcher</title>
+    <link rel="icon" type="image/x-icon" href="img/Logo01.svg" />
+    <link rel="stylesheet" href="src/style.css">
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      :root {
-        --signal-white: #efefef;
-        --black-brown: #181818;
-        --traffic-red: #cb0605;
-        --sky-blue: #0071a4;
-      }
-
-      body {
-        background-color: #0a0a0a;
-        color: var(--signal-white);
-        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      }
-
-      .neon-text {
-        text-shadow: 0 0 15px rgba(0, 113, 164, 0.4);
-      }
-
-      .glass-panel {
-        background: rgba(24, 24, 24, 0.72);
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(239, 239, 239, 0.08);
-      }
-
-      .page-bg-grid {
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        opacity: 0.12;
-        background-image:
-          linear-gradient(rgba(239, 239, 239, 0.2) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(239, 239, 239, 0.2) 1px, transparent 1px);
-        background-size: 48px 48px;
-        mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.9), transparent 88%);
-      }
-
-      .card-glow:hover {
-        box-shadow: 0 0 30px rgba(0, 113, 164, 0.28);
-      }
-    </style>
   </head>
   <body class="min-h-screen flex items-center justify-center p-6">
     <div class="page-bg-grid"></div>
@@ -86,6 +48,30 @@
       const statusEl = document.getElementById("status");
       const spinnerEl = document.getElementById("spinner");
 
+      async function loadAvailability() {
+        try {
+          const response = await fetch("/api/games");
+          if (!response.ok) {
+            return;
+          }
+          const payload = await response.json();
+          const games = Array.isArray(payload.games) ? payload.games : [];
+          const byKey = Object.fromEntries(games.map((item) => [item.key, item]));
+
+          document.querySelectorAll(".game-card").forEach((button) => {
+            const gameKey = button.dataset.game;
+            const config = byKey[gameKey];
+            if (!config || config.available) {
+              return;
+            }
+            button.disabled = true;
+            button.title = config.reason || "Game unavailable";
+          });
+        } catch (error) {
+          console.warn("Could not fetch game availability", error);
+        }
+      }
+
       async function selectGame(game, fallbackLaunch) {
         statusEl.textContent = `Initializing ${game.replace("_", " ")}...`;
         spinnerEl.classList.remove("hidden");
@@ -97,11 +83,11 @@
             body: JSON.stringify({ game })
           });
 
+          const payload = await response.json();
           if (!response.ok) {
-            throw new Error(`Request failed with ${response.status}`);
+            throw new Error(payload.error || `Request failed with ${response.status}`);
           }
 
-          const payload = await response.json();
           statusEl.textContent = payload.message || `${game} initialized.`;
 
           const launchUrl = payload.launch_url || fallbackLaunch;
@@ -118,9 +104,13 @@
 
       document.querySelectorAll(".game-card").forEach((button) => {
         button.addEventListener("click", () => {
-          selectGame(button.dataset.game, button.dataset.launch);
+          if (!button.disabled) {
+            selectGame(button.dataset.game, button.dataset.launch);
+          }
         });
       });
+
+      loadAvailability();
     </script>
   </body>
 </html>
