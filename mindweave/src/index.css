@@ -1,1 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
 
+:root {
+  --sky-blue: #0ea5e9;
+  --neural-blue: #38bdf8;
+  --traffic-red: #ef4444;
+  --bg-dark: #020617;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-dark);
+  margin: 0;
+  padding: 0;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Glassmorphism Panel */
+.glass-panel {
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Neon Text Shadows */
+.text-shadow {
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+/* Glow effects for HUD bars */
+.shadow-glow-blue {
+  box-shadow: 0 0 8px var(--neural-blue);
+}
+.shadow-glow-red {
+  box-shadow: 0 0 8px var(--traffic-red);
+}
+
+/* CRT Scanline Effect */
+.scanlines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0) 50%,
+    rgba(0, 0, 0, 0.1) 50%,
+    rgba(0, 0, 0, 0.1)
+  );
+  background-size: 100% 4px;
+  opacity: 0.3;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Custom Scrollbar for Chat Box */
+.scrollbar-hide::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-hide::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+.scrollbar-hide::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.scrollbar-hide::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Typwriter animation cursor */
+.typing-cursor::after {
+  content: '█';
+  animation: blink 1s step-start infinite;
+  color: var(--neural-blue);
+  margin-left: 4px;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
