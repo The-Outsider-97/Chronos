@@ -99,10 +99,21 @@
             <p id="score-turn">Turn: -</p>
             <p id="score-wells">Wells — Red: 0 / Blue: 0</p>
             <p id="score-winner">Winner: In Progress</p>
+            <p id="score-score">Score: 0</p>
+            <p id="score-points">Points: 0</p>
           </div>
         </div>
       </div>
     </aside>
+
+    <div id="endgame-overlay" class="endgame-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="endgame-headline">
+      <div class="endgame-card">
+        <h2 id="endgame-headline">VICTORY</h2>
+        <p id="endgame-subtitle" class="endgame-subtitle">Edge link established.</p>
+        <p id="endgame-winner" class="endgame-winner">Red Architect wins the match.</p>
+        <button id="restart-btn" type="button" class="restart-btn">Start New Match</button>
+      </div>
+    </div>
 
     <script type="module" src="./src/main.js"></script>
   </body>
