@@ -76,6 +76,14 @@ export const createTile = (type, rotation, color) => {
 
 // --- Logic Helpers ---
 
+
+const isAdjacentToPlayer = (playerPosition, target) => {
+  if (!playerPosition || !target) return false;
+  const rowDelta = Math.abs(playerPosition.row - target.row);
+  const colDelta = Math.abs(playerPosition.col - target.col);
+  return rowDelta + colDelta === 1;
+};
+
 export const executeAction = (gameState, action, target) => {
     // Deep clone state to prevent mutation
     let newState = JSON.parse(JSON.stringify(gameState));
@@ -98,15 +106,21 @@ export const executeAction = (gameState, action, target) => {
 
     switch (action) {
       case 'PLACE':
-        if (!board[target.row][target.col]) {
-          const types = ['STRAIGHT', 'CURVE', 'T_JUNCTION'];
-          const randomType = types[Math.floor(Math.random() * types.length)];
-          board[target.row][target.col] = createTile(randomType, 0, player.color);
-          success = true;
-          message = 'Tile placed.';
-        } else {
+        if (board[target.row][target.col]) {
           message = 'Slot is not empty.';
+          break;
         }
+
+        if (!isAdjacentToPlayer(player.position, target)) {
+          message = 'Place must be on an empty tile adjacent to your Architect.';
+          break;
+        }
+
+        const types = ['STRAIGHT', 'CURVE', 'T_JUNCTION'];
+        const randomType = types[Math.floor(Math.random() * types.length)];
+        board[target.row][target.col] = createTile(randomType, 0, player.color);
+        success = true;
+        message = 'Tile placed.';
         break;
 
       case 'ROTATE':
