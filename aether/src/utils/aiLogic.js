@@ -27,7 +27,14 @@ const getValidTargets = (gameState, action) => {
 
   switch (action) {
     case 'PLACE':
-      for (let r = 0; r < BOARD_SIZE; r++) for (let c = 0; c < BOARD_SIZE; c++) if (!board[r][c]) add(r, c);
+      if (player.position) {
+        const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+        for (const [dr, dc] of dirs) {
+          const r = player.position.row + dr;
+          const c = player.position.col + dc;
+          if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && !board[r][c]) add(r, c);
+        }
+      }
       break;
     case 'ROTATE':
       for (let r = 0; r < BOARD_SIZE; r++) {
