@@ -1,6 +1,6 @@
 import { BOARD_SIZE, POWER_WELLS, TILE_CONNECTIONS, generateDeck } from '../constants.js';
 
-export const createInitialState = () => {
+export const createInitialState = ({ mode = 'PVAI', aiStarts = false } = {}) => {
   const board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
 
   // Initialize players
@@ -45,10 +45,10 @@ export const createInitialState = () => {
   const faceUpCards = [...deck];
 
   return {
-    mode: 'PVAI', // Default to Player vs AI
+    mode,
     board,
     players,
-    activePlayer: 1,
+    activePlayer: aiStarts ? 2 : 1,
     turn: 1,
     actionsRemaining: 2,
     deck: [], // Deck is empty as all cards are face up
@@ -264,6 +264,7 @@ export const executeAction = (gameState, action, target) => {
             // Switch player
             newState.activePlayer = newState.activePlayer === 1 ? 2 : 1;
             newState.actionsRemaining = 2;
+            newState.turn += 1;
             newState.selectedCardId = null;
             newState.selectedActionIndex = null;
             message += ` Turn over. Player ${newState.activePlayer}'s turn.`;
