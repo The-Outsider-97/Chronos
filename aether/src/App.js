@@ -55,7 +55,7 @@ export default function App() {
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [gameState.activePlayer, gameState.mode, gameState.winner]);
+  }, [gameState.activePlayer, gameState.actionsRemaining, gameState.mode, gameState.winner]);
 
   const handleCardSelect = (cardId, actionIndex) => {
     if (gameState.winner || (gameState.mode === 'PVAI' && gameState.activePlayer === 2)) return;
@@ -90,11 +90,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neutral-900 text-neutral-200 font-sans selection:bg-indigo-500/30">
-      <div className="mx-auto max-w-[1420px] px-5 py-6 lg:pr-[370px]">
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_390px] gap-6 items-start">
+      <div className="mx-auto max-w-[1420px] px-3 py-4 lg:pr-[370px]">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_390px] gap-6 items-start border-b border-white/10 pb-4">
           <section className="relative min-h-[760px]">
             <div className="flex items-center gap-3">
-              <h1 className="text-5xl font-bold tracking-tighter text-white">AETHER SHIFT</h1>
+              <h1 className="text-[44px] font-extrabold tracking-[-0.03em] leading-none text-white">
+                AETHER <span className="text-red-500">SHIFT</span>
+              </h1>
               <button
                 type="button"
                 onClick={() => setGameState((prev) => ({ ...prev, showGuide: !prev.showGuide }))}
@@ -103,7 +105,7 @@ export default function App() {
                 Quick Guide {gameState.showGuide ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
             </div>
-            <p className="mt-1 text-xs tracking-[0.35em] text-indigo-200">TACTICAL SPATIAL WARFARE</p>
+            <p className="mt-2 text-sm tracking-[0.22em] text-neutral-500">TACTICAL SPATIAL WARFARE</p>
 
             {gameState.showGuide && (
               <div className="absolute top-[76px] left-0 right-0 z-20 rounded-xl border border-indigo-400/40 bg-indigo-950/35 p-4 text-sm">
@@ -118,12 +120,12 @@ export default function App() {
           </section>
 
           <section className="space-y-4 w-[390px]">
-            <div className="text-center border-b border-white/10 pb-2">
-              <div className={`text-4xl font-bold ${gameState.activePlayer === 1 ? 'text-red-500' : 'text-blue-500'}`}>
-                {gameState.players[gameState.activePlayer].name}'s Turn
-              </div>
-              <div className="text-xs uppercase tracking-[0.24em] text-neutral-400">Actions: {gameState.actionsRemaining}</div>
-              <div className="mt-2 flex justify-center gap-2">
+            <div className="text-right pb-2">
+              <div className={`text-[38px] font-bold leading-none ${gameState.activePlayer === 1 ? 'text-red-500' : 'text-blue-500'}`}>
+                {gameState.players[gameState.activePlayer].name}'s Turn␊
+              </div>␊
+              <div className="text-xs uppercase tracking-[0.24em] text-neutral-300">Actions: {gameState.actionsRemaining}</div>
+              <div className="mt-2 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => handleModeChange('PVAI')}
