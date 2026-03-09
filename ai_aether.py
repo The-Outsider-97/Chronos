@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 import sys
 import time
@@ -48,6 +49,7 @@ class AetherShiftAI:
 
         self._planning_task_registered = False
         self._planning_enabled = True
+        self.match_log_path = project_root / 'AI' / 'logs' / 'aether_matches.jsonl'
         self.shared_memory.set("aether_ai_status", "initialized")
         logger.info("Aether Shift AI initialized with Knowledge, Planning, Execution, and Learning agents")
 
@@ -93,7 +95,20 @@ class AetherShiftAI:
         try:
             if hasattr(self.learning_agent, "learn"):
                 self.learning_agent.learn(payload)
-            self.shared_memory.set("aether_last_game", payload)
+
+            enriched_payload = {
+                **payload,
+                "logged_at": datetime.utcnow().isoformat(),
+            }
+            self.shared_memory.set("aether_last_game", enriched_payload)
+
+            self.match_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.match_log_path.open("a", encoding="utf-8") as handle:
+                handle.write(f"{json.dumps(enriched_payload, ensure_ascii=False)}\n")
+
+            if isinstance(payload.get("aiActions"), list):
+                self.shared_memory.set("aether_last_ai_actions", payload["aiActions"])
+
             return True
         except Exception as error:  # noqa: BLE001
             logger.warning("Aether Shift learning update failed: %s", error)
