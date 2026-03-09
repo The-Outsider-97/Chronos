@@ -1,7 +1,7 @@
 import { BOARD_SIZE, POWER_WELLS, TILE_CONNECTIONS } from './constants.js';
 import { createInitialState, executeAction, getRotatedConnections } from './utils/gameLogic.js';
 import { requestAetherMove } from './service/aetherAiClient.js';
-import { computeMatchRecord } from './utils/scoring.js';
+import { computeMatchRecord, SCOREBOARD_STORAGE_KEY } from './utils/scoring.js';
 
 const guideBtn = document.getElementById('guide-toggle');
 const guide = document.getElementById('quick-guide');
@@ -28,6 +28,7 @@ const scoreWells = document.getElementById('score-wells');
 const scoreWinner = document.getElementById('score-winner');
 const scoreScore = document.getElementById('score-score');
 const scorePoints = document.getElementById('score-points');
+const scoreHistory = document.getElementById('score-history');
 const endgameOverlay = document.getElementById('endgame-overlay');
 const endgameHeadline = document.getElementById('endgame-headline');
 const endgameSubtitle = document.getElementById('endgame-subtitle');
@@ -37,6 +38,11 @@ const restartBtn = document.getElementById('restart-btn');
 let gameState = createInitialState({ mode: 'PVAI', aiStarts: true });
 let activityLog = ['System ready.'];
 let aiTurnToken = 0;
+let aiActionLog = [];
+let matchLogged = false;
+
+const SCOREBOARD_MAX_MATCHES = 12;
+const AI_MATCH_LOG_KEY = 'aether_shift_ai_match_log_v1';
 
 const isPowerWell = (row, col) => POWER_WELLS.some((well) => well.row === row && well.col === col);
 const wellOwner = (row, col) => gameState.capturedWells[`${row},${col}`] || null;
@@ -44,6 +50,33 @@ const wellOwner = (row, col) => gameState.capturedWells[`${row},${col}`] || null
 const postSystemMessage = (message) => {
   if (!message) return;
   activityLog = [message, ...activityLog].slice(0, 22);
+};
+
+const getStoredList = (storageKey) => {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveStoredList = (storageKey, record, max = SCOREBOARD_MAX_MATCHES) => {
+  const history = getStoredList(storageKey);
+  history.unshift(record);
+  localStorage.setItem(storageKey, JSON.stringify(history.slice(0, max)));
+};
+
+const recordAiAction = (entry) => {
+  aiActionLog = [
+    ...aiActionLog,
+    {
+      turn: gameState.turn,
+      timestamp: new Date().toISOString(),
+      ...entry,
+    },
+  ];
 };
 
 const selectedAction = () => {
@@ -77,6 +110,52 @@ const renderScore = () => {
   scoreWinner.textContent = `Winner: ${gameState.winner ? gameState.players[gameState.winner].name : 'In Progress'}`;
   scoreScore.textContent = `Score: ${matchRecord.score}`;
   scorePoints.textContent = `Points: ${matchRecord.points}`;
+
+  const completedMatches = getStoredList(SCOREBOARD_STORAGE_KEY);
+  if (!completedMatches.length) {
+    scoreHistory.innerHTML = '<p class="empty-history">No completed matches yet.</p>';
+    return;
+  }
+
+  scoreHistory.innerHTML = completedMatches.map((entry, idx) => `
+    <article class="history-card">
+      <p class="history-top">Match ${completedMatches.length - idx} · ${entry.timestamp}</p>
+      <p>Mode: ${entry.mode}</p>
+      <p>Winner: ${entry.winner}</p>
+      <p>Turns/Rounds: ${entry.turns} / ${entry.rounds}</p>
+      <p>Wells — Red: ${entry.wells?.red ?? 0} / Blue: ${entry.wells?.blue ?? 0}</p>
+      <p>Score: ${entry.score}</p>
+      <p>Points: ${entry.points}</p>
+      <p>AI actions logged: ${entry.aiActions ?? 0}</p>
+    </article>
+  `).join('');
+};
+
+const finalizeMatchIfNeeded = () => {
+  if (!gameState.winner || matchLogged) return null;
+
+  const record = {
+    ...computeMatchRecord(gameState),
+    aiActions: aiActionLog.length,
+  };
+
+  saveStoredList(SCOREBOARD_STORAGE_KEY, record);
+  saveStoredList(AI_MATCH_LOG_KEY, {
+    id: record.id,
+    timestamp: record.timestamp,
+    mode: record.mode,
+    winner: record.winner,
+    score: record.score,
+    points: record.points,
+    turns: record.turns,
+    rounds: record.rounds,
+    reason: gameState.winReason,
+    aiActions: aiActionLog,
+    systemLog: activityLog,
+  }, 40);
+
+  matchLogged = true;
+  return record;
 };
 
 const renderPlayerPanels = () => {
@@ -221,6 +300,7 @@ const renderEndgameOverlay = () => {
 };
 
 const render = () => {
+  finalizeMatchIfNeeded();
   renderHeader();
   renderPlayerPanels();
   renderActionCards();
@@ -260,6 +340,7 @@ const queueAiTurn = () => {
     const move = await requestAetherMove(gameState);
     if (!move) {
       postSystemMessage('AI skipped turn.');
+      recordAiAction({ type: 'SKIP' });
       gameState = { ...gameState, activePlayer: 1, actionsRemaining: 2 };
       render();
       return;
@@ -272,12 +353,27 @@ const queueAiTurn = () => {
     const action = card?.actions?.[move.actionIndex];
     if (!action) {
       postSystemMessage('AI selected an invalid action.');
+      recordAiAction({ type: 'INVALID_MOVE', move });
       render();
       return;
     }
 
+    recordAiAction({
+      type: 'SELECTED_ACTION',
+      cardId: move.cardId,
+      actionIndex: move.actionIndex,
+      action,
+      target: move.target || null,
+    });
+
     const result = executeAction(gameState, action, move.target);
     postSystemMessage(result.message || 'AI action resolved.');
+    recordAiAction({
+      type: result.success ? 'ACTION_RESOLVED' : 'ACTION_FAILED',
+      action,
+      target: move.target || null,
+      message: result.message || null,
+    });
     if (result.success) {
       gameState = result.newState;
       render();
@@ -299,17 +395,21 @@ const queueAiTurn = () => {
 };
 
 const notifyLearnEndpoint = async () => {
+  const matchRecord = finalizeMatchIfNeeded() || computeMatchRecord(gameState);
   try {
     await fetch('/api/ai/learn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         game: 'aether_shift',
+        matchRecord,
         winner: gameState.winner,
         mode: gameState.mode,
         turns: gameState.turn,
         capturedWells: gameState.capturedWells,
         reason: gameState.winReason,
+        aiActions: aiActionLog,
+        systemLog: activityLog,
       }),
     });
   } catch (error) {
@@ -322,6 +422,8 @@ modeSelect.addEventListener('change', () => {
   const aiStarts = nextMode === 'PVAI';
   gameState = createInitialState({ mode: nextMode, aiStarts });
   aiTurnToken += 1;
+  aiActionLog = [];
+  matchLogged = false;
   activityLog = [`Mode switched: ${nextMode === 'PVAI' ? 'Player v. AI' : 'Player v. Player'}.`];
   render();
   if (gameState.mode === 'PVAI' && gameState.activePlayer === 2) queueAiTurn();
@@ -354,6 +456,8 @@ if (gameState.mode === 'PVAI' && gameState.activePlayer === 2) queueAiTurn();
 restartBtn.addEventListener('click', () => {
   gameState = createInitialState({ mode: gameState.mode, aiStarts: gameState.mode === 'PVAI' });
   aiTurnToken += 1;
+  aiActionLog = [];
+  matchLogged = false;
   activityLog = ['New game initialized.'];
   render();
   if (gameState.mode === 'PVAI' && gameState.activePlayer === 2) queueAiTurn();
