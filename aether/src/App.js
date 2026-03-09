@@ -1,14 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { Info, X } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { createInitialState, executeAction } from './utils/gameLogic.js';
 import { requestAetherMove } from './service/aetherAiClient.js';
 import Board from './components/Board.js';
 import ActionDeck from './components/ActionDeck.js';
 import PlayerPanel from './components/PlayerPanel.js';
+import SideBar from './components/SideBar.js';
+
+const QUICK_GUIDE = [
+  'Goal: Connect your edge (Red: Top, Blue: Bottom) to the opposite side OR capture 3 Power Wells.',
+  'Turn: Pick 2 actions from the cards below.',
+  'Shift: Click edge tiles to slide rows/cols.',
+  'Attune: Lock a tile & capture Wells.',
+  'Place: a tile.',
+  'Rotate: Rotate a tile.',
+  'Advance: Move character to the adjacent connected tile.',
+];
 
 export default function App() {
   const [gameState, setGameState] = useState(() => createInitialState());
-  const [notification, setNotification] = useState('');
+  const [activityLog, setActivityLog] = useState(['System ready.']);
+
+  const postSystemMessage = (message) => {
+    if (!message) return;
+    setActivityLog((prev) => [message, ...prev].slice(0, 20));
+  };
 
   useEffect(() => {
     if (gameState.mode !== 'PVAI' || gameState.activePlayer !== 2 || gameState.winner) return;
@@ -16,7 +32,7 @@ export default function App() {
     const timer = setTimeout(async () => {
       const move = await requestAetherMove(gameState);
       if (!move) {
-        setNotification('AI skipped turn.');
+        postSystemMessage('AI skipped turn.');
         setGameState((prev) => ({ ...prev, activePlayer: 1, actionsRemaining: 2 }));
         return;
       }
@@ -27,19 +43,19 @@ export default function App() {
           const card = prev.faceUpCards.find((c) => c.id === move.cardId);
           const action = card?.actions?.[move.actionIndex];
           if (!action) {
-            setNotification('AI selected an invalid action.');
+            postSystemMessage('AI selected an invalid action.');
             return prev;
           }
 
           const result = executeAction(prev, action, move.target);
-          setNotification(result.message || 'AI action resolved.');
+          postSystemMessage(result.message || 'AI action resolved.');
           return result.success ? result.newState : prev;
         });
       }, 350);
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [gameState.activePlayer, gameState.actionsRemaining, gameState.mode, gameState.winner]);
+  }, [gameState.activePlayer, gameState.mode, gameState.winner]);
 
   const handleCardSelect = (cardId, actionIndex) => {
     if (gameState.winner || (gameState.mode === 'PVAI' && gameState.activePlayer === 2)) return;
@@ -52,51 +68,146 @@ export default function App() {
 
     const card = gameState.faceUpCards.find((c) => c.id === gameState.selectedCardId);
     const action = card?.actions?.[gameState.selectedActionIndex];
-    if (action) handleActionExecution(action, { row, col });
+    if (action) {
+      const result = executeAction(gameState, action, { row, col });
+      if (result.success) setGameState(result.newState);
+      postSystemMessage(result.message);
+    }
   };
 
-  const handleActionExecution = (action, target) => {
-    const result = executeAction(gameState, action, target);
-    if (result.success) {
-      setGameState(result.newState);
-    }
-    setNotification(result.message);
+  const handleModeChange = (mode) => {
+    const aiStarts = mode === 'PVAI';
+    setGameState(createInitialState({ mode, aiStarts }));
+    setActivityLog([`Mode switched: ${mode === 'PVAI' ? 'Player v. AI' : 'Player v. Player'}.`]);
   };
+
+  const handleNewGame = () => {
+    setGameState(createInitialState({ mode: gameState.mode, aiStarts: gameState.mode === 'PVAI' }));
+    setActivityLog(['New game initialized.']);
+  };
+
+  const winnerName = gameState.winner ? gameState.players[gameState.winner].name : '';
 
   return (
     <div className="min-h-screen bg-neutral-900 text-neutral-200 font-sans selection:bg-indigo-500/30">
-      <div className="max-w-6xl mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-12 border-b border-white/10 pb-4 space-y-3">
-          <div className="flex justify-between items-start gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold tracking-tighter text-white">AETHER SHIFT</h1>
+      <div className="mx-auto max-w-[1420px] px-5 py-6 lg:pr-[370px]">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_390px] gap-6 items-start">
+          <section className="relative min-h-[760px]">
+            <div className="flex items-center gap-3">
+              <h1 className="text-5xl font-bold tracking-tighter text-white">AETHER SHIFT</h1>
+              <button
+                type="button"
+                onClick={() => setGameState((prev) => ({ ...prev, showGuide: !prev.showGuide }))}
+                className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-neutral-300 hover:text-white hover:border-indigo-400"
+              >
+                Quick Guide {gameState.showGuide ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+            </div>
+            <p className="mt-1 text-xs tracking-[0.35em] text-indigo-200">TACTICAL SPATIAL WARFARE</p>
+
+            {gameState.showGuide && (
+              <div className="absolute top-[76px] left-0 right-0 z-20 rounded-xl border border-indigo-400/40 bg-indigo-950/35 p-4 text-sm">
+                <p className="font-semibold text-indigo-100">Quick Guide</p>
+                <ul className="mt-2 list-disc list-inside space-y-1 text-indigo-100/90">
+                  {QUICK_GUIDE.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-4 w-[390px]">
+            <div className="text-center border-b border-white/10 pb-2">
+              <div className={`text-4xl font-bold ${gameState.activePlayer === 1 ? 'text-red-500' : 'text-blue-500'}`}>
+                {gameState.players[gameState.activePlayer].name}'s Turn
+              </div>
+              <div className="text-xs uppercase tracking-[0.24em] text-neutral-400">Actions: {gameState.actionsRemaining}</div>
+              <div className="mt-2 flex justify-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setGameState((prev) => ({ ...prev, showGuide: !prev.showGuide }))}
-                  className="p-1.5 rounded-full border border-white/20 text-neutral-300 hover:text-white hover:border-indigo-400 transition-colors"
-                  aria-label={gameState.showGuide ? 'Hide game guide' : 'Show game guide'}
-                  title={gameState.showGuide ? 'Hide game guide' : 'Show game guide'}
+                  onClick={() => handleModeChange('PVAI')}
+                  className={`rounded-lg border px-3 py-1 text-[11px] font-semibold ${
+                    gameState.mode === 'PVAI' ? 'border-indigo-400 text-indigo-200' : 'border-white/20 text-neutral-400'
+                  }`}
                 >
-                  {gameState.showGuide ? <X size={14} /> : <Info size={14} />}
+                  Player v. AI
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleModeChange('PVP')}
+                  className={`rounded-lg border px-3 py-1 text-[11px] font-semibold ${
+                    gameState.mode === 'PVP' ? 'border-indigo-400 text-indigo-200' : 'border-white/20 text-neutral-400'
+                  }`}
+                >
+                  Player v. Player
                 </button>
               </div>
-              <p className="mt-1 text-xs md:text-sm tracking-[0.28em] text-indigo-300/80">TACTICAL SPATIAL WARFARE</p>
             </div>
-            <div className={`text-xl font-bold ${gameState.activePlayer === 1 ? 'text-red-500' : 'text-blue-500'}`}>{gameState.players[gameState.activePlayer].name}'s Turn</div>
-          </div>
 
-          {gameState.showGuide && (
-            <div className="rounded-xl border border-indigo-400/30 bg-indigo-500/10 p-4 text-sm text-indigo-100/90 leading-relaxed">
-              <p><span className="font-semibold text-indigo-200">Guide:</span> Complete a path from your home edge to the enemy edge, or capture 3 power wells.</p>
-              <p className="text-indigo-200/85 mt-2">Each turn has 2 actions. Use SHIFT to control lanes, ADVANCE to navigate connected routes, and ATTUNE to lock key power wells.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <PlayerPanel player={gameState.players[1]} isActive={gameState.activePlayer === 1} capturedWells={gameState.capturedWells} />
+              <PlayerPanel player={gameState.players[2]} isActive={gameState.activePlayer === 2} capturedWells={gameState.capturedWells} />
             </div>
-          )}
+
+            <div className="relative flex justify-center">
+              <Board gameState={gameState} onTileClick={handleTileClick} />
+              {gameState.winner && (
+                <div className="absolute inset-5 rounded-2xl border border-white/20 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-4 text-center p-6">
+                  <h2 className="text-4xl font-bold text-white">
+                    {gameState.winner === 1 ? 'Victory' : gameState.mode === 'PVAI' ? 'Defeat' : 'Victory'}
+                  </h2>
+                  <p className="text-sm text-neutral-300">{winnerName} wins — {gameState.winReason}</p>
+                  <button
+                    type="button"
+                    onClick={handleNewGame}
+                    className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400"
+                  >
+                    Start New Game
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">Action Deck</p>
+              <ActionDeck
+                cards={gameState.faceUpCards}
+                selectedCardId={gameState.selectedCardId}
+                selectedActionIndex={gameState.selectedActionIndex}
+                onSelect={handleCardSelect}
+                disabled={!!gameState.winner || (gameState.mode === 'PVAI' && gameState.activePlayer === 2)}
+              />
+            </div>
+          </section>
         </div>
-        <div className="lg:col-span-3 space-y-6"><PlayerPanel player={gameState.players[1]} isActive={gameState.activePlayer === 1} capturedWells={gameState.capturedWells} /><div className="bg-neutral-800/50 p-4 rounded-xl border border-white/5">{notification || 'System ready.'}</div></div>
-        <div className="lg:col-span-6 flex justify-center items-start relative"><Board gameState={gameState} onTileClick={handleTileClick} /></div>
-        <div className="lg:col-span-3 space-y-6"><PlayerPanel player={gameState.players[2]} isActive={gameState.activePlayer === 2} capturedWells={gameState.capturedWells} /><ActionDeck cards={gameState.faceUpCards} selectedCardId={gameState.selectedCardId} selectedActionIndex={gameState.selectedActionIndex} onSelect={handleCardSelect} disabled={!!gameState.winner || (gameState.mode === 'PVAI' && gameState.activePlayer === 2)} /></div>
       </div>
+
+      <SideBar
+        className="fixed right-0 top-24 h-[78vh] z-30"
+        title="Scoreboard"
+        commsTitle="Comms"
+        scoreboardContent={(
+          <div className="space-y-3 text-sm">
+            <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+              <div className="text-xs uppercase tracking-widest text-neutral-500">Current Match</div>
+              <div className="mt-2 text-neutral-200">Mode: {gameState.mode === 'PVAI' ? 'Player v. AI' : 'Player v. Player'}</div>
+              <div className="text-neutral-200">Turn: {gameState.turn}</div>
+              <div className="text-neutral-200">Power Wells — Red: {Object.values(gameState.capturedWells).filter((id) => id === 1).length} / Blue: {Object.values(gameState.capturedWells).filter((id) => id === 2).length}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-neutral-400">
+              Winner: {gameState.winner ? winnerName : 'In Progress'}
+            </div>
+          </div>
+        )}
+        commsContent={(
+          <div className="rounded-xl border border-white/10 bg-black/30 p-3 h-[64vh] overflow-y-auto text-xs font-mono text-neutral-300 space-y-2">
+            {activityLog.map((entry, index) => (
+              <p key={`${entry}-${index}`} className="border-b border-white/5 pb-2">{entry}</p>
+            ))}
+          </div>
+        )}
+      />
     </div>
   );
 }
