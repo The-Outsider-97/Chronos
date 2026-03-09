@@ -24,6 +24,14 @@ from src.agents.planning.planning_types import Task, TaskType
 
 logger = get_logger("Aether Shift")
 
+ACTION_BY_CARD_ID = {
+    "card-place": "PLACE",
+    "card-shift": "SHIFT",
+    "card-rotate": "ROTATE",
+    "card-advance": "ADVANCE",
+    "card-attune": "ATTUNE",
+}
+
 @dataclass
 class AetherShiftAI:
     game: str = "aether_shift"
@@ -162,13 +170,17 @@ class AetherShiftAI:
         if isinstance(execution_signal, dict) and execution_signal.get("selected_action") != "idle":
             bonus = float(execution_signal.get("confidence", 0.0)) * 3.0
 
-        best_move: dict[str, Any] | None = None
-        best_score = float("-inf")
+        scored_moves: list[tuple[dict[str, Any], float]] = []
         for move in valid_moves:
             score = self._score_move(move, game_state, strategy_context, plan) + bonus
-            if score > best_score:
-                best_score = score
-                best_move = move
+            scored_moves.append((move, score))
+
+        if not scored_moves:
+            return None, float("-inf")
+
+        best_score = max(score for _, score in scored_moves)
+        top_band = [move for move, score in scored_moves if score >= best_score - 2.0]
+        best_move = random.choice(top_band) if top_band else None
 
         return best_move, best_score
 
@@ -191,25 +203,50 @@ class AetherShiftAI:
         col = target.get("col")
 
         card_id = move.get("cardId", "")
-        if "attune" in card_id:
-            score += 25
-        elif "advance" in card_id:
-            score += 20
-        elif "shift" in card_id:
-            score += 12
-        elif "rotate" in card_id:
-            score += 8
-        elif "place" in card_id:
+        action_type = ACTION_BY_CARD_ID.get(card_id, "")
+
+        if action_type == "ATTUNE":
+            score += 40
+        elif action_type == "ADVANCE":
+            score += 34
+        elif action_type == "PLACE":
+            score += 16
+        elif action_type == "ROTATE":
+            score += 14
+        elif action_type == "SHIFT":
             score += 10
 
-        if isinstance(row, int):
+        if action_type in {"ADVANCE", "PLACE"} and isinstance(row, int):
             score += max(0, 4 - abs(goal_row - row)) * 6
 
         power_wells = game_state.get("powerWells", [])
-        if isinstance(row, int) and isinstance(col, int) and any(
+        is_power_well_target = isinstance(row, int) and isinstance(col, int) and any(
             w.get("row") == row and w.get("col") == col for w in power_wells if isinstance(w, dict)
-        ):
+        )
+        if is_power_well_target:
             score += 40
+
+        captured_wells = game_state.get("capturedWells", {})
+        well_key = f"{row},{col}" if isinstance(row, int) and isinstance(col, int) else None
+
+        if action_type == "ATTUNE" and is_power_well_target and well_key and well_key not in captured_wells:
+            my_wells = sum(1 for owner in captured_wells.values() if owner == active_player)
+            score += 60
+            if my_wells >= 2:
+                score += 500
+
+        opponent_id = 1 if active_player == 2 else 2
+        opponent = players.get(str(opponent_id), players.get(opponent_id, {}))
+        opponent_pos = opponent.get("position", {}) if isinstance(opponent, dict) else {}
+        opponent_goal = opponent.get("goalRow") if isinstance(opponent, dict) else None
+        if isinstance(opponent_goal, int) and isinstance(opponent_pos.get("row"), int):
+            opp_distance_to_goal = abs(opponent_goal - opponent_pos["row"])
+            if opp_distance_to_goal <= 1 and action_type in {"SHIFT", "ROTATE", "PLACE"}:
+                score += 24
+
+        if action_type == "SHIFT":
+            # Keep SHIFT useful but avoid deterministic edge-locking bias.
+            score += random.uniform(-1.5, 1.5)
 
         if strategy_context:
             score += 2
