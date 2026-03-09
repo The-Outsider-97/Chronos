@@ -87,6 +87,14 @@ select option { color: #111; }
 .log-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-height: 240px; background: #06070a; color: #d3deed; font-size: 14px; }
 #log-box { max-height: 68vh; overflow: auto; }
 #log-box p { margin: 0 0 8px; border-bottom: 1px solid rgba(255,255,255,.06); padding-bottom: 8px; }
+.score-status-box { min-height: 0; }
+.score-history { margin-top: 8px; max-height: 38vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.empty-history { margin: 0; color: #7d8594; font-style: italic; font-size: 12px; }
+.history-card { border: 1px solid var(--line); border-radius: 10px; background: #06070a; padding: 10px; font-size: 12px; color: #d3deed; }
+.history-card p { margin: 0 0 5px; }
+.history-card p:last-child { margin-bottom: 0; }
+.history-top { color: #7d8594; letter-spacing: .08em; text-transform: uppercase; font-size: 10px; }
+
 @media (max-width: 1320px) {
   .aether-shell { padding-right: 40px; }
   .right-sidebar { position: static; width: auto; height: auto; margin: 18px 28px 24px; transform: none !important; }
