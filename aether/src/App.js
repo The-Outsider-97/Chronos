@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { createInitialState, executeAction } from './utils/gameLogic.js';
 import { requestAetherMove } from './service/aetherAiClient.js';
+import { computeMatchRecord, SCOREBOARD_STORAGE_KEY } from './utils/scoring.js';
 import Board from './components/Board.js';
 import ActionDeck from './components/ActionDeck.js';
 import PlayerPanel from './components/PlayerPanel.js';
@@ -17,14 +18,37 @@ const QUICK_GUIDE = [
   'Advance: Move character to the adjacent connected tile.',
 ];
 
+const loadMatchHistory = () => {
+  try {
+    const raw = localStorage.getItem(SCOREBOARD_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
 export default function App() {
   const [gameState, setGameState] = useState(() => createInitialState());
   const [activityLog, setActivityLog] = useState(['System ready.']);
+  const [matchHistory, setMatchHistory] = useState(() => loadMatchHistory());
+  const [matchLogged, setMatchLogged] = useState(false);
 
   const postSystemMessage = (message) => {
     if (!message) return;
     setActivityLog((prev) => [message, ...prev].slice(0, 20));
   };
+
+  useEffect(() => {
+    localStorage.setItem(SCOREBOARD_STORAGE_KEY, JSON.stringify(matchHistory));
+  }, [matchHistory]);
+
+  useEffect(() => {
+    if (!gameState.winner || matchLogged) return;
+    const record = computeMatchRecord(gameState);
+    setMatchHistory((prev) => [record, ...prev].slice(0, 12));
+    setMatchLogged(true);
+  }, [gameState, matchLogged]);
 
   useEffect(() => {
     if (gameState.mode !== 'PVAI' || gameState.activePlayer !== 2 || gameState.winner) return;
@@ -78,15 +102,18 @@ export default function App() {
   const handleModeChange = (mode) => {
     const aiStarts = mode === 'PVAI';
     setGameState(createInitialState({ mode, aiStarts }));
+    setMatchLogged(false);
     setActivityLog([`Mode switched: ${mode === 'PVAI' ? 'Player v. AI' : 'Player v. Player'}.`]);
   };
 
   const handleNewGame = () => {
     setGameState(createInitialState({ mode: gameState.mode, aiStarts: gameState.mode === 'PVAI' }));
+    setMatchLogged(false);
     setActivityLog(['New game initialized.']);
   };
 
   const winnerName = gameState.winner ? gameState.players[gameState.winner].name : '';
+  const currentMatchPreview = useMemo(() => computeMatchRecord(gameState), [gameState]);
 
   return (
     <div className="min-h-screen bg-neutral-900 text-neutral-200 font-sans selection:bg-indigo-500/30">
@@ -122,8 +149,8 @@ export default function App() {
           <section className="space-y-4 w-[390px]">
             <div className="text-right pb-2">
               <div className={`text-[38px] font-bold leading-none ${gameState.activePlayer === 1 ? 'text-red-500' : 'text-blue-500'}`}>
-                {gameState.players[gameState.activePlayer].name}'s Turn␊
-              </div>␊
+                {gameState.players[gameState.activePlayer].name}'s Turn
+              </div>
               <div className="text-xs uppercase tracking-[0.24em] text-neutral-300">Actions: {gameState.actionsRemaining}</div>
               <div className="mt-2 flex justify-end gap-2">
                 <button
@@ -154,21 +181,6 @@ export default function App() {
 
             <div className="relative flex justify-center">
               <Board gameState={gameState} onTileClick={handleTileClick} />
-              {gameState.winner && (
-                <div className="absolute inset-5 rounded-2xl border border-white/20 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-4 text-center p-6">
-                  <h2 className="text-4xl font-bold text-white">
-                    {gameState.winner === 1 ? 'Victory' : gameState.mode === 'PVAI' ? 'Defeat' : 'Victory'}
-                  </h2>
-                  <p className="text-sm text-neutral-300">{winnerName} wins — {gameState.winReason}</p>
-                  <button
-                    type="button"
-                    onClick={handleNewGame}
-                    className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400"
-                  >
-                    Start New Game
-                  </button>
-                </div>
-              )}
             </div>
 
             <div className="space-y-2">
@@ -185,21 +197,63 @@ export default function App() {
         </div>
       </div>
 
+      {gameState.winner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xl px-4">
+          <div className="relative w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/10 bg-neutral-950/90 p-10 shadow-2xl ring-1 ring-white/10">
+            <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
+            <div className="relative flex flex-col items-center gap-3 text-center">
+              <h2 className={`text-7xl font-black tracking-tighter ${gameState.winner === 1 ? 'text-red-400' : 'text-blue-400'} drop-shadow-[0_0_20px_rgba(99,102,241,0.45)]`}>
+                {gameState.winner === 1 ? 'VICTORY' : gameState.mode === 'PVAI' ? 'DEFEAT' : 'VICTORY'}
+              </h2>
+              <div className="text-[10px] font-bold text-white/50 tracking-[0.4em] uppercase">
+                {gameState.winReason === 'Path Completed!' ? 'EDGE LINK ESTABLISHED' : 'WELL DOMINANCE ACHIEVED'}
+              </div>
+              <p className="text-sm text-neutral-300">{winnerName} wins the match.</p>
+            </div>
+
+            <div className="relative mt-8 rounded-2xl border border-white/10 bg-black/40 px-6 py-5 text-sm text-neutral-200">
+              <div className="grid grid-cols-2 gap-y-2">
+                <p>Mode: <span className="text-white">{currentMatchPreview.mode}</span></p>
+                <p>Turns and Rounds: <span className="font-mono text-white">{currentMatchPreview.turns} / {currentMatchPreview.rounds}</span></p>
+                <p>Wells -- Red: <span className="font-mono text-white">{currentMatchPreview.wells.red}</span> / Blue: <span className="font-mono text-white">{currentMatchPreview.wells.blue}</span></p>
+                <p>Winner: <span className="text-white">{currentMatchPreview.winner}</span></p>
+                <p>Score: <span className="font-mono text-white">{currentMatchPreview.score}</span></p>
+                <p>Points: <span className={`font-mono ${currentMatchPreview.points > 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{currentMatchPreview.points}</span></p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleNewGame}
+              className="relative mt-8 w-full rounded-2xl bg-white py-4 text-xs font-black uppercase tracking-[0.3em] text-black transition-all hover:bg-indigo-400 hover:text-white"
+            >
+              Start New Match
+            </button>
+          </div>
+        </div>
+      )}
+
       <SideBar
         className="fixed right-0 top-24 h-[78vh] z-30"
         title="Scoreboard"
         commsTitle="Comms"
         scoreboardContent={(
           <div className="space-y-3 text-sm">
-            <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <div className="text-xs uppercase tracking-widest text-neutral-500">Current Match</div>
-              <div className="mt-2 text-neutral-200">Mode: {gameState.mode === 'PVAI' ? 'Player v. AI' : 'Player v. Player'}</div>
-              <div className="text-neutral-200">Turn: {gameState.turn}</div>
-              <div className="text-neutral-200">Power Wells — Red: {Object.values(gameState.capturedWells).filter((id) => id === 1).length} / Blue: {Object.values(gameState.capturedWells).filter((id) => id === 2).length}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-neutral-400">
-              Winner: {gameState.winner ? winnerName : 'In Progress'}
-            </div>
+            {matchHistory.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-neutral-400">No completed matches yet.</div>
+            ) : (
+              matchHistory.map((entry) => (
+                <div key={entry.id} className="rounded-xl border border-white/10 bg-black/30 p-3 space-y-1 text-[12px]">
+                  <div className="text-[10px] uppercase tracking-widest text-neutral-500">{entry.timestamp}</div>
+                  <div>Mode: <span className="text-neutral-200">{entry.mode}</span></div>
+                  <div>Turns and Rounds: <span className="font-mono text-neutral-200">{entry.turns} / {entry.rounds}</span></div>
+                  <div>Wells -- Red: <span className="font-mono text-neutral-200">{entry.wells.red}</span> / Blue: <span className="font-mono text-neutral-200">{entry.wells.blue}</span></div>
+                  <div>Winner: <span className="text-neutral-200">{entry.winner}</span></div>
+                  <div>Score: <span className="font-mono text-neutral-200">{entry.score}</span></div>
+                  <div>Points: <span className={`font-mono ${entry.points > 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{entry.points}</span></div>
+                </div>
+              ))
+            )}
           </div>
         )}
         commsContent={(
