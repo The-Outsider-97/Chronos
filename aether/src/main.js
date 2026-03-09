@@ -1,6 +1,6 @@
-import { BOARD_SIZE, POWER_WELLS, TILE_CONNECTIONS } from './src/constants.js';
-import { createInitialState, executeAction, getRotatedConnections } from './src/utils/gameLogic.js';
-import { requestAetherMove } from './src/service/aetherAiClient.js';
+import { BOARD_SIZE, POWER_WELLS, TILE_CONNECTIONS } from './constants.js';
+import { createInitialState, executeAction, getRotatedConnections } from './utils/gameLogic.js';
+import { requestAetherMove } from './service/aetherAiClient.js';
 
 const guideBtn = document.getElementById('guide-toggle');
 const guide = document.getElementById('quick-guide');
@@ -166,18 +166,20 @@ const renderBoard = () => {
 const renderActionCards = () => {
   actionCards.innerHTML = '';
   gameState.faceUpCards.forEach((card) => {
-    const selected = gameState.selectedCardId === card.id && gameState.selectedActionIndex === 0;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `card ${selected ? 'selected' : ''}`;
-    button.textContent = card.actions[0];
-    button.disabled = !canAct();
-    button.addEventListener('click', () => {
-      gameState.selectedCardId = card.id;
-      gameState.selectedActionIndex = 0;
-      render();
+    card.actions.forEach((action, actionIndex) => {
+      const selected = gameState.selectedCardId === card.id && gameState.selectedActionIndex === actionIndex;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `card ${selected ? 'selected' : ''}`;
+      button.textContent = action;
+      button.disabled = !canAct();
+      button.addEventListener('click', () => {
+        gameState.selectedCardId = card.id;
+        gameState.selectedActionIndex = actionIndex;
+        render();
+      });
+      actionCards.appendChild(button);
     });
-    actionCards.appendChild(button);
   });
 };
 
