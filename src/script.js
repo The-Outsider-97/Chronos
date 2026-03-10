@@ -43,6 +43,25 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function markInputError(message) {
+    apiKeyInput.style.borderColor = "var(--traffic-red)";
+    statusEl.textContent = message;
+    setTimeout(() => (apiKeyInput.style.borderColor = ""), 1500);
+  }
+
+  async function validateMindweaveKey(key) {
+    const response = await fetch("/api/validate-mindweave-key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: key }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok || !payload.valid) {
+      throw new Error(payload.error || "API key validation failed");
+    }
+  }
+
   /**
    * Initializes the game via the server API and handles redirection.
    */
@@ -78,7 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Listen for game card clicks
   document.querySelectorAll(".game-card").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       // 1. Prevent clicking if disabled by the availability check
       if (button.disabled) return;
 
@@ -91,17 +110,27 @@ document.addEventListener("DOMContentLoaded", () => {
       if (requiresApi) {
         const storedKey = localStorage.getItem("mindweave_llm_api_key");
         if (!storedKey) {
-          // Open modal if no key is found
           pendingGame = gameId;
           pendingFallbackLaunch = launchUrl;
           apiModal.classList.remove("hidden");
           apiKeyInput.value = "";
           apiKeyInput.focus();
-          return; // Stop execution here until the modal is resolved
+          return;
+        }
+
+        try {
+          await validateMindweaveKey(storedKey);
+        } catch (error) {
+          statusEl.textContent = "Stored Mindweave API key is invalid. Please update it.";
+          pendingGame = gameId;
+          pendingFallbackLaunch = launchUrl;
+          apiModal.classList.remove("hidden");
+          apiKeyInput.value = storedKey;
+          apiKeyInput.focus();
+          return;
         }
       }
 
-      // 3. Launch immediately if no API is required, or if the key already exists
       selectGame(gameId, launchUrl);
     });
   });
@@ -127,24 +156,33 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Modal Save & Launch Button
-  btnSaveApi.addEventListener("click", () => {
+  btnSaveApi.addEventListener("click", async () => {
     const key = apiKeyInput.value.trim();
-    if (key) {
-      // Save to local storage (Frontend only)
+    if (!key) {
+      markInputError("API key is required.");
+      return;
+    }
+
+    const originalLabel = btnSaveApi.textContent;
+    btnSaveApi.disabled = true;
+    btnSaveApi.textContent = "Validating...";
+
+    try {
+      await validateMindweaveKey(key);
       localStorage.setItem("mindweave_llm_api_key", key);
       apiModal.classList.add("hidden");
+      statusEl.textContent = "Mindweave API key saved in this browser (localStorage).";
 
-      // Proceed with the server launch sequence
       if (pendingGame && pendingFallbackLaunch) {
         selectGame(pendingGame, pendingFallbackLaunch);
-        // Reset pending state
         pendingGame = "";
         pendingFallbackLaunch = "";
       }
-    } else {
-      // Provide visual feedback for an empty input
-      apiKeyInput.style.borderColor = "var(--traffic-red)";
-      setTimeout(() => (apiKeyInput.style.borderColor = ""), 1000);
+    } catch (error) {
+      markInputError(`Mindweave key invalid: ${error.message}`);
+    } finally {
+      btnSaveApi.disabled = false;
+      btnSaveApi.textContent = originalLabel;
     }
   });
 
