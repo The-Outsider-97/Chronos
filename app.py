@@ -11,9 +11,10 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import sys
+import sys, os
 import threading
 import uuid
+import requests
 
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -42,7 +43,7 @@ except ImportError as e:
     print(f"Error importing modules: {e}")
     raise
 
-logger = get_logger("r-games.app")
+logger = get_logger("R-Games")
 
 @dataclass(frozen=True)
 class GameConfig:
@@ -70,7 +71,7 @@ GAMES: dict[str, GameConfig] = {
     ),
     "mindweave": GameConfig(
         key="mindweave",
-        display_name="Mindweave",
+        display_name="Project: Mindweave",
         ai_module="ai_mindweave",
         ai_initializer="initialize_ai",
         launch_url="/mindweave/index.html",
@@ -219,6 +220,41 @@ class GameRuntime:
 
 runtime = GameRuntime()
 
+def validate_mindweave_api_key(api_key: str) -> tuple[bool, str | None]:
+    """Validate the user-supplied Mindweave/OpenAI-compatible API key."""
+    key = api_key.strip()
+    if not key:
+        return False, "API key is required"
+
+    if len(key) < 20:
+        return False, "API key appears too short"
+
+    validation_url = os.getenv("MINDWEAVE_VALIDATION_URL", "https://api.openai.com/v1/models")
+    timeout_seconds = float(os.getenv("MINDWEAVE_VALIDATION_TIMEOUT", "8"))
+
+    try:
+        response = requests.get(
+            validation_url,
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=timeout_seconds,
+        )
+    except requests.RequestException as error:
+        logger.warning("Mindweave key validation request failed: %s", error)
+        return False, "Unable to reach key validation service"
+
+    if response.status_code == HTTPStatus.OK:
+        return True, None
+
+    if response.status_code in {HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN}:
+        return False, "API key rejected by provider"
+
+    logger.warning(
+        "Unexpected key validation response (%s): %s",
+        response.status_code,
+        response.text[:200],
+    )
+    return False, f"Validation failed with status {response.status_code}"
+
 
 class RequestHandler(SimpleHTTPRequestHandler):
     """Static file server + game launcher + unified AI APIs."""
@@ -289,6 +325,19 @@ class RequestHandler(SimpleHTTPRequestHandler):
             payload = json.loads(raw_body or b"{}")
         except json.JSONDecodeError:
             self._send_json({"error": "Invalid JSON payload"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        if self.path == "/api/validate-mindweave-key":
+            key = payload.get("api_key") if isinstance(payload, dict) else None
+            if not isinstance(key, str):
+                self._send_json({"valid": False, "error": "api_key must be a string"}, HTTPStatus.BAD_REQUEST)
+                return
+
+            is_valid, reason = validate_mindweave_api_key(key)
+            if is_valid:
+                self._send_json({"valid": True, "message": "API key verified"}, HTTPStatus.OK)
+            else:
+                self._send_json({"valid": False, "error": reason or "API key is invalid"}, HTTPStatus.BAD_REQUEST)
             return
 
         if self.path == "/api/select-game":
