@@ -122,6 +122,29 @@ document.addEventListener('DOMContentLoaded', () => {
   const eqSyncValue = document.getElementById('eq-sync-value');
   const eqSyncBar = document.getElementById('eq-sync-bar');
   let currentEqScore = 82;
+  let activeSessionId = null;
+
+  async function ensureMindweaveSelected() {
+    const selectionResp = await fetch('/api/select-game', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'mindweave' })
+    });
+
+    if (!selectionResp.ok) {
+      const errorPayload = await selectionResp.json().catch(() => ({}));
+      throw new Error(errorPayload.error || 'Unable to initialize Mindweave backend');
+    }
+
+    const selectedPayload = await selectionResp.json();
+    activeSessionId = selectedPayload.session_id || activeSessionId;
+
+    const selectedGameResp = await fetch('/api/selected-game');
+    if (selectedGameResp.ok) {
+      const selectedGamePayload = await selectedGameResp.json().catch(() => ({}));
+      activeSessionId = selectedGamePayload.session_id || activeSessionId;
+    }
+  }
 
   function updateNPCState(emotion, textIndicator) {
     currentEmotion = emotion;
@@ -161,31 +184,42 @@ document.addEventListener('DOMContentLoaded', () => {
     sendBtn.disabled = true;
     updateNPCState('thinking', 'Processing Semantics...');
 
-    // Simulate LLM Processing time and logical response mapping
-    // *In a production environment, you would make a fetch() call to your backend or directly to OpenAI here using the apiKey variable*
-    setTimeout(() => {
-      // Dummy logic to simulate EQ response
-      const lowerText = text.toLowerCase();
-      let response = "";
-      
-      if (lowerText.includes('understand') || lowerText.includes('help') || lowerText.includes('calm')) {
-        response = "Your empathy parameters are acceptable. My logic loops are stabilizing. Proceed with the temporal hack.";
-        updateNPCState('calm', 'Regulated / Stable');
-        adjustEQScore(5);
-      } else if (lowerText.includes('hurry') || lowerText.includes('now') || lowerText.includes('fix')) {
-        response = "Your aggressive syntax triggers my defense subroutines! The grid cannot be forced!";
-        updateNPCState('stress', 'Agitated / Defensive');
-        adjustEQScore(-15);
-      } else {
-        response = "Input acknowledged. However, the emotional context is ambiguous. Please recalibrate your active listening protocols.";
-        updateNPCState('neutral', 'Ambiguous');
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Mindweave-API-Key': apiKey,
+        },
+        body: JSON.stringify({
+          session_id: activeSessionId,
+          player_id: 'weaver',
+          message: text,
+          task_type: 'npc_dialogue',
+          telemetry: {
+            source: 'mindweave_frontend',
+            timestamp: Date.now(),
+          },
+        })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || payload.message || 'Chat request failed');
       }
 
-      appendChat('Architect-7', response);
+      updateNPCState(payload.emotion || 'neutral', payload.analysis || 'Backend Synced');
+      adjustEQScore(Number(payload.eq_delta || 0));
+      appendChat('Architect-7', payload.reply || 'No response generated.');
+    } catch (error) {
+      appendChat('SYSTEM', `Backend sync failed: ${error.message}`, 'text-red-500');
+      updateNPCState('stress', 'Link Unstable');
+      adjustEQScore(-5);
+    } finally {
       chatInput.disabled = false;
       sendBtn.disabled = false;
       chatInput.focus();
-    }, 2000);
+    }
   }
 
   sendBtn.addEventListener('click', handleChatSubmit);
@@ -195,6 +229,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-empathy-ping').addEventListener('click', () => {
     appendChat('SYSTEM', '[Active Listening Ping Initiated. Architect-7 is masking fear regarding data corruption.]', 'text-slate-500 italic');
+  });
+
+  ensureMindweaveSelected().catch((error) => {
+    appendChat('SYSTEM', `Backend initialization error: ${error.message}`, 'text-red-500');
+    apiStatusEl.textContent = 'Backend link unstable.';
+    apiStatusEl.classList.replace('text-green-400', 'text-red-500');
   });
 
   // --- 5. RENDER LOOP ---
