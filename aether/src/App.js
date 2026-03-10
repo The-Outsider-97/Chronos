@@ -9,11 +9,11 @@ import PlayerPanel from './components/PlayerPanel.js';
 import SideBar from './components/SideBar.js';
 
 const QUICK_GUIDE = [
-  'Goal: Connect your edge (Red: Top, Blue: Bottom) to the opposite side OR capture 3 Power Wells.',
+  'Goal: Connect your edge (Red: Top, Blue: Bottom) to the opposite side OR end your round with 3 locked Power Wells.',
   'Turn: Pick 2 actions from the cards below.',
   'Shift: Click edge tiles to slide rows/cols.',
-  'Attune: Lock a tile & capture Wells.',
-  'Place: a tile.',
+  'Attune: Lock your current tile & capture Wells (grey tiles cannot be used to capture Wells).',
+  'Place: Add a tile to an empty slot.',
   'Rotate: Rotate a tile.',
   'Advance: Move character to the adjacent connected tile.',
 ];
@@ -267,3 +267,4 @@ export default function App() {
     </div>
   );
 }
+
