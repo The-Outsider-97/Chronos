@@ -159,6 +159,7 @@ class MindweaveAI:
             "telemetry": payload.get("telemetry", {}),
             "safety_context": payload.get("safety_context", {}),
             "requested_action": payload.get("requested_action", "analyze"),
+            "command": payload.get("command", "execute_plan"),
             "timestamp": now,
         }
 
@@ -220,7 +221,16 @@ class MindweaveAI:
     def _execute_language(self, event: dict[str, Any]) -> Any:
         execute_fn = getattr(self.language_agent, "execute", None)
         if callable(execute_fn):
-            return execute_fn(event)
+            try:
+                return execute_fn(event)
+            except ValueError as exc:
+                # Some LanguageAgent pipelines delegate to PlanningAgent which requires
+                # a command envelope (`execute_plan`). Retry once with a safe default.
+                if "Unsupported command for PlanningAgent" in str(exc) and not event.get("command"):
+                    patched_event = dict(event)
+                    patched_event["command"] = "execute_plan"
+                    return execute_fn(patched_event)
+                raise
 
         # Progressive fallback to common language-agent contracts.
         for method_name in ("chat", "generate", "respond", "process"):
