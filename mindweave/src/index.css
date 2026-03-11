@@ -129,3 +129,18 @@ body {
   height: 1.8rem;
   line-height: 1;
 }
+
+.mindweave-fixed-actions {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  width: min(280px, calc(100vw - 2rem));
+  z-index: 30;
+}
+
+@media (min-width: 1024px) {
+  .mindweave-fixed-actions {
+    left: 1.5rem;
+    bottom: 1.5rem;
+  }
+}
