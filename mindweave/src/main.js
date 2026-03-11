@@ -16,6 +16,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnHome = document.getElementById('btn-home');
   const btnSettings = document.getElementById('btn-settings');
   const btnNewGame = document.getElementById('btn-new-game');
+  const settingsModal = document.getElementById('settings-modal');
+  const settingsClose = document.getElementById('settings-close');
+  const bgmVolumeInput = document.getElementById('bgm-volume');
+  const sfxVolumeInput = document.getElementById('sfx-volume');
+  const bgmMuteInput = document.getElementById('bgm-mute');
+  const sfxMuteInput = document.getElementById('sfx-mute');
 
 
   const iqValue = document.getElementById('iq-value');
@@ -25,6 +31,41 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressValue = document.getElementById('progress-value');
   const progressBar = document.getElementById('progress-bar');
   const emotionIndicator = document.getElementById('emotion-indicator');
+
+  const audioLibrary = {
+    bgm: ['../src/audio/bg_01.mp3', '../src/audio/bg_02.mp3', '../src/audio/bg_03.mp3', '../src/audio/bg_04.mp3'],
+    sfx: {
+      error: '../src/audio/error.mp3',
+      correct: '../src/audio/correct.mp3',
+      wrong: '../src/audio/wrong.mp3',
+    },
+    voice: {
+      briefing: '../src/audio/A7_01_mission_briefing.m4a',
+      briefingAcknowledge: '../src/audio/A7_02_briefing_acknowledge.m4a',
+      protocol1: '../src/audio/A7_campaign_protocol_01.m4a',
+      protocol2: '../src/audio/A7_campaign_protocol_02.m4a',
+      protocol3: '../src/audio/A7_campaign_protocol_03.m4a',
+      protocol4: '../src/audio/A7_campaign_protocol_04.m4a',
+      chatError: '../src/audio/A7_chat_error.m4a',
+      calmResponse: '../src/audio/A7_calm_response.m4a',
+      stressResponse: '../src/audio/A7_stress_response.m4a',
+      thinkingResponse: '../src/audio/A7_thinking_response.m4a',
+      debriefReceived: '../src/audio/A7_final_debrief.m4a',
+    }
+  };
+
+  const audioState = {
+    bgmVolume: 0.45,
+    sfxVolume: 0.8,
+    bgmMuted: false,
+    sfxMuted: false,
+    bgmCurrent: null,
+    bgmNext: null,
+    bgmFadeInterval: null,
+  };
+
+  const voiceCache = new Map();
+  const sfxCache = new Map();
 
   const gameState = {
     phase: 'briefing',
@@ -55,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   btnSettings.addEventListener('click', () => {
-    appendChat('SYSTEM', 'Audio controls are planned next. Settings panel will handle music/SFX mute and volume shortly.', 'text-yellow-400');
+    openSettings();
   });
 
   btnNewGame.addEventListener('click', () => {
@@ -118,11 +159,116 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentEmotion = 'neutral';
 
   const architectProtocolResponses = {
-    briefing: 'Campaign Protocol 1 engaged. Confirm mission parameters and we will synchronize the civic lattice.',
-    iq: 'Campaign Protocol 2 online. Precision first, Weaver—stability emerges from correct sequence decisions.',
-    eq: 'Campaign Protocol 3 active. Emotional calibration in progress. Lead with validation, then coordinate recovery.',
-    debrief: 'Campaign Protocol 4 unlocked. Integrate cognition and empathy, then encode your transfer strategy.'
+    briefing: { text: 'Campaign Protocol 1 engaged. Confirm mission parameters and we will synchronize the civic lattice.', voice: audioLibrary.voice.protocol1 },
+    iq: { text: 'Campaign Protocol 2 online. Precision first, Weaver—stability emerges from correct sequence decisions.', voice: audioLibrary.voice.protocol2 },
+    eq: { text: 'Campaign Protocol 3 active. Emotional calibration in progress. Lead with validation, then coordinate recovery.', voice: audioLibrary.voice.protocol3 },
+    debrief: { text: 'Campaign Protocol 4 unlocked. Integrate cognition and empathy, then encode your transfer strategy.', voice: audioLibrary.voice.protocol4 }
   };
+
+  function resolveAudioPath(path) {
+    return path;
+  }
+
+  function createAudio(path, loop = false) {
+    const audio = new Audio(resolveAudioPath(path));
+    audio.loop = loop;
+    audio.preload = 'auto';
+    return audio;
+  }
+
+  function cacheSfx() {
+    Object.entries(audioLibrary.sfx).forEach(([key, path]) => {
+      sfxCache.set(key, createAudio(path));
+    });
+  }
+
+  function playSfx(kind) {
+    if (audioState.sfxMuted) return;
+    const base = sfxCache.get(kind) || createAudio(audioLibrary.sfx[kind]);
+    const instance = base.cloneNode();
+    instance.volume = audioState.sfxVolume;
+    instance.play().catch(() => {});
+  }
+
+  function playVoice(path) {
+    if (audioState.sfxMuted) return;
+    const cached = voiceCache.get(path) || createAudio(path);
+    voiceCache.set(path, cached);
+    const instance = cached.cloneNode();
+    instance.volume = audioState.sfxVolume;
+    instance.play().catch(() => {});
+  }
+
+  function fadeTrack(audio, from, to, durationMs, onDone) {
+    const steps = 20;
+    const delta = (to - from) / steps;
+    let i = 0;
+    audio.volume = Math.max(0, Math.min(1, from));
+    const id = setInterval(() => {
+      i += 1;
+      audio.volume = Math.max(0, Math.min(1, from + (delta * i)));
+      if (i >= steps) {
+        clearInterval(id);
+        if (onDone) onDone();
+      }
+    }, Math.max(50, durationMs / steps));
+    return id;
+  }
+
+  function pickRandomBgm(excludeSrc = null) {
+    const options = audioLibrary.bgm.filter((src) => src !== excludeSrc);
+    const chosen = options[Math.floor(Math.random() * options.length)] || audioLibrary.bgm[0];
+    return createAudio(chosen, false);
+  }
+
+  function scheduleBgmTransition(track) {
+    track.addEventListener('loadedmetadata', () => {
+      const fadeLeadMs = 5000;
+      const durationMs = Number.isFinite(track.duration) ? track.duration * 1000 : 30000;
+      const triggerMs = Math.max(0, durationMs - fadeLeadMs);
+      setTimeout(() => crossfadeToNext(track), triggerMs);
+    }, { once: true });
+  }
+
+  function crossfadeToNext(current) {
+    if (!audioState.bgmCurrent || current !== audioState.bgmCurrent) return;
+    const next = pickRandomBgm(current.src);
+    audioState.bgmNext = next;
+    next.volume = 0;
+    next.play().catch(() => {});
+    fadeTrack(next, 0, audioState.bgmMuted ? 0 : audioState.bgmVolume, 5000, () => {
+      audioState.bgmCurrent = next;
+      audioState.bgmNext = null;
+      scheduleBgmTransition(next);
+    });
+    fadeTrack(current, current.volume, 0, 5000, () => {
+      current.pause();
+      current.currentTime = 0;
+    });
+  }
+
+  function startBgm() {
+    const first = pickRandomBgm();
+    audioState.bgmCurrent = first;
+    first.volume = audioState.bgmMuted ? 0 : audioState.bgmVolume;
+    first.play().catch(() => {});
+    scheduleBgmTransition(first);
+  }
+
+  function applyAudioSettings() {
+    if (audioState.bgmCurrent) audioState.bgmCurrent.volume = audioState.bgmMuted ? 0 : audioState.bgmVolume;
+    if (audioState.bgmNext) audioState.bgmNext.volume = audioState.bgmMuted ? 0 : audioState.bgmVolume;
+  }
+
+  function openSettings() {
+    settingsModal.classList.remove('hidden');
+    settingsModal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeSettings() {
+    settingsModal.classList.add('hidden');
+    settingsModal.setAttribute('aria-hidden', 'true');
+  }
 
   function renderTelemetry() {
     telemetryEl.innerHTML = `
@@ -173,12 +319,13 @@ document.addEventListener('DOMContentLoaded', () => {
     eqSyncBar.style.backgroundColor = gameState.eqScore < 40 ? 'var(--traffic-red)' : gameState.eqScore < 70 ? '#eab308' : '#10b981';
   }
 
-  function appendChat(sender, message, colorClass = 'text-white') {
+  function appendChat(sender, message, colorClass = 'text-white', voicePath = null) {
     const div = document.createElement('div');
     const senderColor = sender === 'Weaver' ? 'text-[var(--traffic-red)]' : 'text-[var(--neural-blue)]';
     div.innerHTML = `<span class="${senderColor}">> ${sender}:</span> <span class="${colorClass}">${message}</span>`;
     chatHistory.appendChild(div);
     chatHistory.scrollTop = chatHistory.scrollHeight;
+    if (voicePath) playVoice(voicePath);
   }
 
   async function ensureMindweaveSelected() {
@@ -211,9 +358,13 @@ document.addEventListener('DOMContentLoaded', () => {
       updateNPCState(payload.emotion || 'neutral', payload.analysis || 'Synced');
       gameState.eqScore = Math.max(0, Math.min(100, gameState.eqScore + Number(payload.eq_delta || 0)));
       updateBars();
-      appendChat('Architect-7', payload.reply || 'No response generated.');
+      const reply = payload.reply || 'No response generated.';
+      appendChat('Architect-7', reply, 'text-white', audioLibrary.voice.calmResponse);
+      playSfx('correct');
     } catch (error) {
       appendChat('SYSTEM', `Backend sync failed: ${error.message}`, 'text-red-500');
+      appendChat('Architect-7', 'Input acknowledged. However, the emotional context is ambiguous. Please recalibrate your active listening protocols.', 'text-slate-200', audioLibrary.voice.chatError);
+      playSfx('error');
       updateNPCState('stress', 'Link Unstable');
     }
     renderTelemetry();
@@ -236,6 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>`;
       document.getElementById('start-campaign').onclick = () => {
         markObjective('briefing_read', 'Briefing acknowledged');
+        appendChat('Architect-7', 'Acknowledged. Mission brief locked.', 'text-white', audioLibrary.voice.briefingAcknowledge);
         setPhase('iq');
       };
     }
@@ -274,9 +426,11 @@ document.addEventListener('DOMContentLoaded', () => {
           gameState.iqScore = Math.min(100, gameState.iqScore + 12);
           markObjective('nback_clear', 'Dual N-Back solved');
           appendChat('SYSTEM', 'Working memory lock acquired.', 'text-emerald-400');
+          playSfx('correct');
         } else {
           gameState.iqScore = Math.max(0, gameState.iqScore - 6);
           appendChat('SYSTEM', 'N-back mismatch. Retry with pattern focus.', 'text-yellow-400');
+          playSfx('wrong');
         }
         updateBars();
       };
@@ -287,9 +441,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (a + b === gameState.resourceTarget) {
           gameState.iqScore = Math.min(100, gameState.iqScore + 10);
           markObjective('resource_clear', 'Resource routing stable');
+          playSfx('correct');
         } else {
           gameState.iqScore = Math.max(0, gameState.iqScore - 4);
           appendChat('SYSTEM', 'Supply chain imbalance detected.', 'text-yellow-400');
+          playSfx('wrong');
         }
         updateBars();
       };
@@ -299,9 +455,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (output === 'true') {
           gameState.iqScore = Math.min(100, gameState.iqScore + 10);
           markObjective('logic_clear', 'Logic gate repaired');
+          playSfx('correct');
         } else {
           gameState.iqScore = Math.max(0, gameState.iqScore - 4);
           appendChat('SYSTEM', 'Gate output incorrect.', 'text-yellow-400');
+          playSfx('wrong');
         }
         if (gameState.completedObjectives.has('nback_clear') && gameState.completedObjectives.has('resource_clear') && gameState.completedObjectives.has('logic_clear')) {
           setPhase('eq');
@@ -336,9 +494,13 @@ document.addEventListener('DOMContentLoaded', () => {
           gameState.eqScore = Math.min(100, gameState.eqScore + 8);
           markObjective('micro_clear', 'Micro-expression recognized');
           updateNPCState('calm', 'Validated and understood');
+          appendChat('Architect-7', 'Your empathy parameters are acceptable. My logic loops are stabilizing. Proceed with the temporal hack.', 'text-white', audioLibrary.voice.calmResponse);
+          playSfx('correct');
         } else {
           gameState.eqScore = Math.max(0, gameState.eqScore - 8);
           updateNPCState('stress', 'Misread social cue');
+          appendChat('Architect-7', 'Your aggressive syntax triggers my defense subroutines! The grid cannot be forced!', 'text-white', audioLibrary.voice.stressResponse);
+          playSfx('wrong');
         }
         updateBars();
       };
@@ -356,6 +518,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const reflection = document.getElementById('debrief-text').value.trim();
         if (reflection.length < 20) {
           appendChat('SYSTEM', 'Debrief too short. Include strategy + transfer insight.', 'text-yellow-400');
+          appendChat('Architect-7', 'Debrief received, but include explicit strategy and transfer language for stronger consolidation.', 'text-white', audioLibrary.voice.debriefReceived);
+          playSfx('error');
           return;
         }
         markObjective('debrief_submit', 'Debrief submitted');
@@ -365,11 +529,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     renderTelemetry();
-  }
-
-  function setPhase(phase) {
-    gameState.phase = phase;
-    renderPhase();
   }
 
   function resetGameState() {
@@ -393,7 +552,7 @@ document.addEventListener('DOMContentLoaded', () => {
     gameState.phase = phase;
     renderPhase();
     if (architectProtocolResponses[phase]) {
-      appendChat('Architect-7', architectProtocolResponses[phase]);
+      appendChat('Architect-7', architectProtocolResponses[phase].text, 'text-white', architectProtocolResponses[phase].voice);
     }
   }
 
@@ -403,6 +562,7 @@ document.addEventListener('DOMContentLoaded', () => {
     appendChat('Weaver', text);
     chatInput.value = '';
     updateNPCState('thinking', 'Processing Semantics...');
+    playVoice(audioLibrary.voice.thinkingResponse);
     await sendTaskMessage(text, gameState.phase === 'debrief' ? 'debrief_reflection' : 'npc_dialogue');
 
     if (gameState.phase === 'eq' && /understand|hear|support|calm|together/i.test(text)) {
@@ -442,9 +602,35 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTelemetry();
   });
 
+  settingsClose.addEventListener('click', closeSettings);
+  settingsModal.addEventListener('click', (event) => {
+    if (event.target === settingsModal) closeSettings();
+  });
+
+  bgmVolumeInput.addEventListener('input', (event) => {
+    audioState.bgmVolume = Number(event.target.value);
+    applyAudioSettings();
+  });
+
+  sfxVolumeInput.addEventListener('input', (event) => {
+    audioState.sfxVolume = Number(event.target.value);
+  });
+
+  bgmMuteInput.addEventListener('change', (event) => {
+    audioState.bgmMuted = event.target.checked;
+    applyAudioSettings();
+  });
+
+  sfxMuteInput.addEventListener('change', (event) => {
+    audioState.sfxMuted = event.target.checked;
+  });
+
   phaseButtons.forEach((btn) => {
     btn.addEventListener('click', () => setPhase(btn.dataset.phase));
   });
+
+  cacheSfx();
+  startBgm();
 
   ensureMindweaveSelected().catch((error) => {
     appendChat('SYSTEM', `Backend initialization error: ${error.message}`, 'text-red-500');
@@ -452,7 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
     apiStatusEl.classList.replace('text-green-400', 'text-red-500');
   });
 
-  appendChat('Architect-7', 'Weaver, the socio-cognitive lattice is collapsing. Begin with mission briefing and restore balance.');
+  appendChat('Architect-7', 'Weaver, the socio-cognitive lattice is collapsing. Begin with mission briefing and restore balance.', 'text-white', audioLibrary.voice.briefing);
   updateBars();
   renderObjectives();
   setPhase('briefing');
