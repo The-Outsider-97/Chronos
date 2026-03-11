@@ -75,10 +75,19 @@ logger = get_logger("Project: Mindweave")
 class AgentAdapter:
     """Normalizes heterogeneous agent APIs to a single execute(task_data) contract."""
 
-    def __init__(self, name: str, agent: Any, handlers: list[Callable[[dict[str, Any]], Any]]):
+    def __init__(
+        self,
+        name: str,
+        agent: Any,
+        handlers: list[Callable[[dict[str, Any]], Any]],
+        capabilities: list[str] | None = None,
+    ):
         self.name = name
         self.agent = agent
         self.handlers = handlers
+        # Collaboration registry validates capabilities on the *instance* itself.
+        # Keep this attribute explicit so adapter-based registrations remain valid.
+        self.capabilities = list(capabilities or [])
 
     def execute(self, task_data: dict[str, Any]) -> dict[str, Any]:
         for handler in self.handlers:
@@ -130,7 +139,12 @@ class MindweaveAI:
 
         for task_type, (agent, handlers) in routes.items():
             adapter_name = f"mindweave_{task_type}"
-            adapter = AgentAdapter(name=adapter_name, agent=agent, handlers=handlers)
+            adapter = AgentAdapter(
+                name=adapter_name,
+                agent=agent,
+                handlers=handlers,
+                capabilities=[task_type],
+            )
             manager.register_agent(adapter_name, adapter, capabilities=[task_type])
 
         logger.info("Mindweave collaboration routes registered for %d task types", len(routes))
