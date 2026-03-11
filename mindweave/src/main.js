@@ -22,7 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const sfxVolumeInput = document.getElementById('sfx-volume');
   const bgmMuteInput = document.getElementById('bgm-mute');
   const sfxMuteInput = document.getElementById('sfx-mute');
-
+  const voiceVolumeInput = document.getElementById('voice-volume');
+  const voiceMuteInput = document.getElementById('voice-mute');
 
   const iqValue = document.getElementById('iq-value');
   const iqBar = document.getElementById('iq-bar');
@@ -55,10 +56,12 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const audioState = {
-    bgmVolume: 0.45,
-    sfxVolume: 0.8,
+    bgmVolume: 0.6,
+    sfxVolume: 0.75,
+    voiceVolume: 1,
     bgmMuted: false,
     sfxMuted: false,
+    voiceMuted: false,
     bgmCurrent: null,
     bgmNext: null,
     bgmFadeInterval: null,
@@ -66,6 +69,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const voiceCache = new Map();
   const sfxCache = new Map();
+
+  const voicePriority = {
+    protocol: 4,
+    sequence: 3,
+    reply: 2,
+    reaction: 1,
+  };
+
+  const voiceQueue = [];
+  let activeVoiceJob = null;
 
   const gameState = {
     phase: 'briefing',
@@ -190,13 +203,57 @@ document.addEventListener('DOMContentLoaded', () => {
     instance.play().catch(() => {});
   }
 
-  function playVoice(path) {
-    if (audioState.sfxMuted) return;
-    const cached = voiceCache.get(path) || createAudio(path);
-    voiceCache.set(path, cached);
+  function processVoiceQueue() {
+    if (activeVoiceJob || !voiceQueue.length) return;
+    const nextJob = voiceQueue.shift();
+    const cached = voiceCache.get(nextJob.path) || createAudio(nextJob.path);
+    voiceCache.set(nextJob.path, cached);
     const instance = cached.cloneNode();
-    instance.volume = audioState.sfxVolume;
-    instance.play().catch(() => {});
+    activeVoiceJob = { ...nextJob, audio: instance };
+
+    instance.volume = audioState.voiceMuted ? 0 : audioState.voiceVolume;
+    instance.play().catch(() => {
+      activeVoiceJob = null;
+      if (nextJob.resolve) nextJob.resolve();
+      processVoiceQueue();
+    });
+
+    instance.addEventListener('ended', () => {
+      const finish = () => {
+        activeVoiceJob = null;
+        if (nextJob.resolve) nextJob.resolve();
+        processVoiceQueue();
+      };
+      if (nextJob.delayMs) {
+        setTimeout(finish, nextJob.delayMs);
+      } else {
+        finish();
+      }
+    }, { once: true });
+  }
+
+  function enqueueVoice(path, options = {}) {
+    if (!path || audioState.voiceMuted) return Promise.resolve();
+    const {
+      priority = voicePriority.reaction,
+      clearQueue = false,
+      interrupt = false,
+      delayMs = 0,
+    } = options;
+
+    if (clearQueue) voiceQueue.length = 0;
+
+    if (interrupt && activeVoiceJob?.audio) {
+      activeVoiceJob.audio.pause();
+      activeVoiceJob.audio.currentTime = 0;
+      activeVoiceJob = null;
+    }
+
+    return new Promise((resolve) => {
+      voiceQueue.push({ path, priority, delayMs, resolve });
+      voiceQueue.sort((a, b) => b.priority - a.priority);
+      processVoiceQueue();
+    });
   }
 
   function fadeTrack(audio, from, to, durationMs, onDone) {
@@ -215,36 +272,9 @@ document.addEventListener('DOMContentLoaded', () => {
     return id;
   }
 
-  function pickRandomBgm(excludeSrc = null) {
-    const options = audioLibrary.bgm.filter((src) => src !== excludeSrc);
-    const chosen = options[Math.floor(Math.random() * options.length)] || audioLibrary.bgm[0];
-    return createAudio(chosen, false);
-  }
-
-  function scheduleBgmTransition(track) {
-    track.addEventListener('loadedmetadata', () => {
-      const fadeLeadMs = 5000;
-      const durationMs = Number.isFinite(track.duration) ? track.duration * 1000 : 30000;
-      const triggerMs = Math.max(0, durationMs - fadeLeadMs);
-      setTimeout(() => crossfadeToNext(track), triggerMs);
-    }, { once: true });
-  }
-
-  function crossfadeToNext(current) {
-    if (!audioState.bgmCurrent || current !== audioState.bgmCurrent) return;
-    const next = pickRandomBgm(current.src);
-    audioState.bgmNext = next;
-    next.volume = 0;
-    next.play().catch(() => {});
-    fadeTrack(next, 0, audioState.bgmMuted ? 0 : audioState.bgmVolume, 5000, () => {
-      audioState.bgmCurrent = next;
-      audioState.bgmNext = null;
-      scheduleBgmTransition(next);
-    });
-    fadeTrack(current, current.volume, 0, 5000, () => {
-      current.pause();
-      current.currentTime = 0;
-    });
+  function pickRandomBgm() {
+    const chosen = audioLibrary.bgm[Math.floor(Math.random() * audioLibrary.bgm.length)] || audioLibrary.bgm[0];
+    return createAudio(chosen, true);
   }
 
   function startBgm() {
@@ -257,6 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function applyAudioSettings() {
     if (audioState.bgmCurrent) audioState.bgmCurrent.volume = audioState.bgmMuted ? 0 : audioState.bgmVolume;
+    if (activeVoiceJob?.audio) activeVoiceJob.audio.volume = audioState.voiceMuted ? 0 : audioState.voiceVolume;
     if (audioState.bgmNext) audioState.bgmNext.volume = audioState.bgmMuted ? 0 : audioState.bgmVolume;
   }
 
@@ -325,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
     div.innerHTML = `<span class="${senderColor}">> ${sender}:</span> <span class="${colorClass}">${message}</span>`;
     chatHistory.appendChild(div);
     chatHistory.scrollTop = chatHistory.scrollHeight;
-    if (voicePath) playVoice(voicePath);
+    if (voicePath) enqueueVoice(voicePath, { priority: voicePriority.reply });
   }
 
   async function ensureMindweaveSelected() {
@@ -385,10 +416,12 @@ document.addEventListener('DOMContentLoaded', () => {
           </ul>
           <button id="start-campaign" class="mindweave-action">Acknowledge Briefing</button>
         </div>`;
-      document.getElementById('start-campaign').onclick = () => {
+      document.getElementById('start-campaign').onclick = async () => {
         markObjective('briefing_read', 'Briefing acknowledged');
-        appendChat('Architect-7', 'Acknowledged. Mission brief locked.', 'text-white', audioLibrary.voice.briefingAcknowledge);
-        setPhase('iq');
+        appendChat('Architect-7', 'Acknowledged. Mission brief locked.', 'text-white');
+        await enqueueVoice(audioLibrary.voice.briefingAcknowledge, { priority: voicePriority.sequence, clearQueue: true, interrupt: true, delayMs: 500 });
+        setPhase('iq', { skipProtocolVoice: true });
+        enqueueVoice(audioLibrary.voice.protocol2, { priority: voicePriority.sequence });
       };
     }
 
@@ -548,11 +581,15 @@ document.addEventListener('DOMContentLoaded', () => {
     setPhase('briefing');
   }
 
-  function setPhase(phase) {
+  function setPhase(phase, options = {}) {
+    const { skipProtocolVoice = false } = options;
     gameState.phase = phase;
     renderPhase();
     if (architectProtocolResponses[phase]) {
-      appendChat('Architect-7', architectProtocolResponses[phase].text, 'text-white', architectProtocolResponses[phase].voice);
+      appendChat('Architect-7', architectProtocolResponses[phase].text, 'text-white');
+      if (!skipProtocolVoice) {
+        enqueueVoice(architectProtocolResponses[phase].voice, { priority: voicePriority.protocol });
+      }
     }
   }
 
@@ -562,7 +599,7 @@ document.addEventListener('DOMContentLoaded', () => {
     appendChat('Weaver', text);
     chatInput.value = '';
     updateNPCState('thinking', 'Processing Semantics...');
-    playVoice(audioLibrary.voice.thinkingResponse);
+    enqueueVoice(audioLibrary.voice.thinkingResponse, { priority: voicePriority.reaction, clearQueue: true, interrupt: true });
     await sendTaskMessage(text, gameState.phase === 'debrief' ? 'debrief_reflection' : 'npc_dialogue');
 
     if (gameState.phase === 'eq' && /understand|hear|support|calm|together/i.test(text)) {
@@ -625,11 +662,41 @@ document.addEventListener('DOMContentLoaded', () => {
     audioState.sfxMuted = event.target.checked;
   });
 
+  voiceVolumeInput.addEventListener('input', (event) => {
+    audioState.voiceVolume = Number(event.target.value);
+    applyAudioSettings();
+  });
+
+  voiceMuteInput.addEventListener('change', (event) => {
+    audioState.voiceMuted = event.target.checked;
+    if (audioState.voiceMuted) {
+      if (activeVoiceJob?.audio) {
+        activeVoiceJob.audio.pause();
+        activeVoiceJob.audio.currentTime = 0;
+      }
+      activeVoiceJob = null;
+      voiceQueue.length = 0;
+    }
+    applyAudioSettings();
+  });
+
   phaseButtons.forEach((btn) => {
-    btn.addEventListener('click', () => setPhase(btn.dataset.phase));
+    btn.addEventListener('click', () => {
+      const phase = btn.dataset.phase;
+      setPhase(phase, { skipProtocolVoice: phase === 'briefing' });
+      if (phase === 'briefing') {
+        enqueueVoice(audioLibrary.voice.protocol1, { priority: voicePriority.protocol, clearQueue: true, interrupt: true });
+      }
+    });
   });
 
   cacheSfx();
+  bgmVolumeInput.value = String(audioState.bgmVolume);
+  sfxVolumeInput.value = String(audioState.sfxVolume);
+  voiceVolumeInput.value = String(audioState.voiceVolume);
+  bgmMuteInput.checked = audioState.bgmMuted;
+  sfxMuteInput.checked = audioState.sfxMuted;
+  voiceMuteInput.checked = audioState.voiceMuted;
   startBgm();
 
   ensureMindweaveSelected().catch((error) => {
@@ -641,7 +708,7 @@ document.addEventListener('DOMContentLoaded', () => {
   appendChat('Architect-7', 'Weaver, the socio-cognitive lattice is collapsing. Begin with mission briefing and restore balance.', 'text-white', audioLibrary.voice.briefing);
   updateBars();
   renderObjectives();
-  setPhase('briefing');
+  setPhase('briefing', { skipProtocolVoice: true });
 
   window.addEventListener('resize', () => {
     const nextAspect = window.innerWidth / window.innerHeight;
