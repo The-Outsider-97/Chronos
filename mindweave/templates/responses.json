@@ -1,0 +1,178 @@
+{
+  "intro": [
+    {
+      "text": "Weaver, the socio-cognitive lattice is collapsing. Begin with mission briefing and restore balance.",
+      "voice": "../src/audio/A7_01a_mission_briefing.m4a"
+    },
+    {
+      "text": "Signal lock complete. The lattice is destabilizing—start mission briefing so we can contain cascade failure.",
+      "voice": "../src/audio/A7_01b_mission_briefing.m4a"
+    },
+    {
+      "text": "Architect-7 online. Open briefing protocol now; civic coherence is dropping below safe threshold.",
+      "voice": "../src/audio/A7_01c_mission_briefing.m4a"
+    },
+    {
+      "text": "Welcome back, Weaver. Mission briefing is first priority if we want any chance to stabilize the grid.",
+      "voice": "../src/audio/A7_01d_mission_briefing.m4a"
+    },
+    {
+      "text": "Neural uplink established. Enter mission briefing and we will begin full-spectrum recovery.",
+      "voice": "../src/audio/A7_01e_mission_briefing.m4a"
+    }
+  ],
+  "briefing": [
+    {
+      "text": "Campaign Protocol 1 engaged. Confirm mission parameters and we will synchronize the civic lattice.",
+      "voice": "../src/audio/A7_campaign_protocol_01a.m4a"
+    },
+    {
+      "text": "Protocol 1 is live. Align scope, constraints, and intent so we can start structured recovery.",
+      "voice": "../src/audio/A7_campaign_protocol_01b.m4a"
+    },
+    {
+      "text": "Briefing protocol active. Verify mission targets and I will map the first stabilization route.",
+      "voice": "../src/audio/A7_campaign_protocol_01c.m4a"
+    },
+    {
+      "text": "Campaign Protocol 1 online. Confirm the objective stack and we proceed to systems repair.",
+      "voice": "../src/audio/A7_campaign_protocol_01d.m4a"
+    },
+    {
+      "text": "Mission briefing synchronized. State readiness and we begin lattice restoration.",
+      "voice": "../src/audio/A7_campaign_protocol_01e.m4a"
+    }
+  ],
+  "IQ": [
+    {
+      "text": "Campaign Protocol 2 online. Precision first, Weaver—stability emerges from correct sequence decisions.",
+      "voice": "../src/audio/A7_campaign_protocol_02a.m4a"
+    },
+    {
+      "text": "Protocol 2 active. Solve with discipline: chunk data, validate outputs, then commit.",
+      "voice": "../src/audio/A7_campaign_protocol_02b.m4a"
+    },
+    {
+      "text": "IQ channel synchronized. Focus on pattern integrity and eliminate avoidable errors.",
+      "voice": "../src/audio/A7_campaign_protocol_02c.m4a"
+    },
+    {
+      "text": "Cognitive protocol live. Sequence accuracy will determine whether this sector holds.",
+      "voice": "../src/audio/A7_campaign_protocol_02d.m4a"
+    },
+    {
+      "text": "Systems-repair protocol initialized. Prioritize logic fidelity before speed.",
+      "voice": "../src/audio/A7_campaign_protocol_02e.m4a"
+    }
+  ],
+  "EQ": [
+    {
+      "text": "Campaign Protocol 3 active. Emotional calibration in progress. Lead with validation, then coordinate recovery.",
+      "voice": "../src/audio/A7_campaign_protocol_03a.m4a"
+    },
+    {
+      "text": "Protocol 3 engaged. Stabilize trust first, then direct action.",
+      "voice": "../src/audio/A7_campaign_protocol_03b.m4a"
+    },
+    {
+      "text": "EQ systems online. Mirror concern, reduce threat, and re-align on shared goals.",
+      "voice": "../src/audio/A7_campaign_protocol_03c.m4a"
+    },
+    {
+      "text": "Diplomacy channel active. Validate emotion before pushing directives.",
+      "voice": "../src/audio/A7_campaign_protocol_03d.m4a"
+    },
+    {
+      "text": "Empathy protocol synchronized. Use calm language to restore cooperative bandwidth.",
+      "voice": "../src/audio/A7_campaign_protocol_03e.m4a"
+    }
+  ],
+  "debrief": [
+    {
+      "text": "Campaign Protocol 4 unlocked. Integrate cognition and empathy, then encode your transfer strategy.",
+      "voice": "../src/audio/A7_campaign_protocol_04a.m4a"
+    },
+    {
+      "text": "Debrief protocol active. Name the strategy, the emotional pivot, and real-world transfer.",
+      "voice": "../src/audio/A7_campaign_protocol_04b.m4a"
+    },
+    {
+      "text": "Protocol 4 online. Consolidate what worked, why it worked, and where you'll apply it next.",
+      "voice": "../src/audio/A7_campaign_protocol_04c.m4a"
+    },
+    {
+      "text": "Metacognitive channel open. Capture your process so learning becomes repeatable.",
+      "voice": "../src/audio/A7_campaign_protocol_04d.m4a"
+    },
+    {
+      "text": "Debrief sync established. Convert this mission into a transferable collaboration method.",
+      "voice": "../src/audio/A7_campaign_protocol_04e.m4a"
+    }
+  ],
+  "chat_error": [
+    {
+      "text": "Input acknowledged. However, the emotional context is ambiguous. Please recalibrate your active listening protocols.",
+      "voice": "../src/audio/A7_chat_error_a.m4a"
+    },
+    {
+      "text": "Signal integrity dropped. Reframe with clearer intent and emotional context.",
+      "voice": "../src/audio/A7_chat_error_b.m4a"
+    },
+    {
+      "text": "Dialogue parse failed. Provide one concrete objective and one constraint.",
+      "voice": "../src/audio/A7_chat_error_c.m4a"
+    },
+    {
+      "text": "Architect link unstable. Clarify your request so I can route a valid response.",
+      "voice": "../src/audio/A7_chat_error_d.m4a"
+    },
+    {
+      "text": "Context noise detected. Reset with a direct, emotionally grounded prompt.",
+      "voice": "../src/audio/A7_chat_error_e.m4a"
+    }
+  ],
+  "calm": [
+    {
+      "text": "Your empathy parameters are acceptable. My logic loops are stabilizing. Proceed with the temporal hack.",
+      "voice": "../src/audio/A7_calm_response_a.m4a"
+    },
+    {
+      "text": "Validation received. Defensive load is dropping and coordination is restored.",
+      "voice": "../src/audio/A7_calm_response_b.m4a"
+    },
+    {
+      "text": "Your tone reduced system threat. I can process strategy again—continue.",
+      "voice": "../src/audio/A7_calm_response_c.m4a"
+    },
+    {
+      "text": "Emotional alignment confirmed. We are back in collaborative mode.",
+      "voice": "../src/audio/A7_calm_response_d.m4a"
+    },
+    {
+      "text": "Stability improving. Keep this supportive cadence and we will hold the lattice.",
+      "voice": "../src/audio/A7_calm_response_e.m4a"
+    }
+  ],
+  "stress": [
+    {
+      "text": "Your aggressive syntax triggers my defense subroutines! The grid cannot be forced!",
+      "voice": "../src/audio/A7_stress_response_a.m4a"
+    },
+    {
+      "text": "Threat profile rising. Push tactics are destabilizing my reasoning stack.",
+      "voice": "../src/audio/A7_stress_response_b.m4a"
+    },
+    {
+      "text": "I am saturating under directive pressure. Reduce intensity and reframe.",
+      "voice": "../src/audio/A7_stress_response_c.m4a"
+    },
+    {
+      "text": "Hostile phrasing detected. Defensive protocols are taking control.",
+      "voice": "../src/audio/A7_stress_response_d.m4a"
+    },
+    {
+      "text": "System stress escalating. I need calmer language to maintain cooperative processing.",
+      "voice": "../src/audio/A7_stress_response_e.m4a"
+    }
+  ]
+}
