@@ -222,28 +222,85 @@ class MindweaveAI:
             return evaluate_fn(event)
         return {"note": "evaluation method unavailable"}
 
+    def _is_system_fallback_payload(self, payload: Any) -> bool:
+        if isinstance(payload, str):
+            marker = payload.strip()
+            return marker.startswith("[Fallback]") or "Unsupported command for PlanningAgent" in marker
+        if isinstance(payload, dict):
+            text_fields = [payload.get(key) for key in ("reply", "response", "text", "message", "data")]
+            for value in text_fields:
+                if isinstance(value, str) and self._is_system_fallback_payload(value):
+                    return True
+        return False
+
+    def _has_dialogue_payload(self, payload: Any) -> bool:
+        if isinstance(payload, str):
+            return bool(payload.strip()) and not self._is_system_fallback_payload(payload)
+        if isinstance(payload, dict):
+            for key in ("reply", "response", "text", "message", "data"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip() and not self._is_system_fallback_payload(value):
+                    return True
+        return False
+
     def _execute_language(self, event: dict[str, Any]) -> Any:
         sanitized_event = dict(event)
         if sanitized_event.get("command") == "execute_plan":
             # Language tasks should not be forced through planning command handlers.
             sanitized_event["command"] = "chat"
 
+        # Some language-agent variants expose planning-centric execute contracts.
+        # Prefer explicit language methods first so NPC dialogue does not fail on
+        # "Unsupported command for PlanningAgent: 'chat'".
+        for method_name in ("chat", "generate", "respond", "process"):
+            language_fn = getattr(self.language_agent, method_name, None)
+            if callable(language_fn):
+                result = language_fn(sanitized_event)
+                if self._is_system_fallback_payload(result):
+                    return {
+                        "status": "fallback",
+                        "response": "I am present and listening. Share your objective, and I will architect the next move.",
+                        "reason": "language contract returned internal fallback payload",
+                    }
+                return result
+
         execute_fn = getattr(self.language_agent, "execute", None)
         if callable(execute_fn):
-            result = execute_fn(sanitized_event)
+            try:
+                result = execute_fn(sanitized_event)
+            except ValueError as exc:
+                if "Unsupported command for PlanningAgent" in str(exc):
+                    return {
+                        "status": "fallback",
+                        "response": "I am present and listening. Share your objective, and I will architect the next move.",
+                        "reason": "language agent execute path expects planning commands",
+                    }
+                raise
+
             if isinstance(result, dict) and result.get("status") == "AWAITING_PLAN":
                 return {
                     "status": "fallback",
                     "response": "I am present and listening. Share your objective, and I will architect the next move.",
                     "reason": result.get("message", "language agent returned planning placeholder"),
                 }
-            return result
 
-        # Progressive fallback to common language-agent contracts.
-        for method_name in ("chat", "generate", "respond", "process"):
-            language_fn = getattr(self.language_agent, method_name, None)
-            if callable(language_fn):
-                return language_fn(sanitized_event)
+            if self._is_system_fallback_payload(result):
+                return {
+                    "status": "fallback",
+                    "response": "I am present and listening. Share your objective, and I will architect the next move.",
+                    "reason": "language execute path returned internal fallback payload",
+                }
+
+            # If execute returns non-dialogue content, keep a useful
+            # player-facing fallback message.
+            if not self._has_dialogue_payload(result):
+                return {
+                    "status": "fallback",
+                    "response": "Architect link established. State your goal and constraints so I can plan the next move.",
+                    "reason": "language execute path returned non-dialogue payload",
+                }
+
+            return result
 
         return {"note": "language execution unavailable"}
 
@@ -254,12 +311,14 @@ class MindweaveAI:
         result = route_result.get("result", {})
         if isinstance(result, dict):
             payload = result.get("result", result)
+            if self._is_system_fallback_payload(payload):
+                return fallback_message
             if isinstance(payload, str) and payload.strip():
                 return payload.strip()
             if isinstance(payload, dict):
                 for key in ("reply", "response", "text", "message", "data"):
                     value = payload.get(key)
-                    if isinstance(value, str) and value.strip():
+                    if isinstance(value, str) and value.strip() and not self._is_system_fallback_payload(value):
                         return value.strip()
 
         return fallback_message
