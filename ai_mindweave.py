@@ -43,6 +43,7 @@ from __future__ import annotations
 import sys, os
 import json
 import math
+import random
 import threading
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -71,6 +72,7 @@ except ImportError as e:
     raise
 
 logger = get_logger("Project: Mindweave")
+RESPONSE_TEMPLATE_PATH = project_root / "mindweave" / "templates" / "responses.JSON"
 
 class AgentAdapter:
     """Normalizes heterogeneous agent APIs to a single execute(task_data) contract."""
@@ -119,9 +121,30 @@ class MindweaveAI:
         self._register_task_routes()
         self._planning_task_registered = False
         self._planning_enabled = True
+        self.response_templates = self._load_response_templates()
         self.match_log_path = project_root / 'AI' / 'logs' / 'mindweave.jsonl'
         self.shared_memory.set("mindweave_ai_status", "initialized")
         logger.info("Project: Mindweave AI initialized with Knowledge, Planning, Evaluation, Language, and Safety agents")
+
+    def _load_response_templates(self) -> dict[str, list[dict[str, str]]]:
+        try:
+            with RESPONSE_TEMPLATE_PATH.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if isinstance(payload, dict):
+                return payload
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Unable to load Mindweave response templates: %s", exc)
+        return {}
+
+    def _pick_response(self, group: str, fallback: str, fallback_voice: str | None = None) -> tuple[str, str | None]:
+        options = self.response_templates.get(group, [])
+        if isinstance(options, list) and options:
+            candidate = random.choice(options)
+            if isinstance(candidate, dict):
+                text = str(candidate.get("text", fallback)).strip() or fallback
+                voice = candidate.get("voice") if isinstance(candidate.get("voice"), str) else fallback_voice
+                return text, voice
+        return fallback, fallback_voice
 
     def _register_task_routes(self) -> None:
         manager = self.collab.collaboration_manager
@@ -383,30 +406,52 @@ class MindweaveAI:
 
         if task_type == "debrief_reflection":
             if any(token in lower_text for token in ("strategy", "reflect", "transfer", "real-world", "collaboration")):
-                response = "Debrief accepted. You demonstrated metacognitive transfer and emotional regulation insight."
+                response, voice = self._pick_response(
+                    "debrief",
+                    "Debrief accepted. You demonstrated metacognitive transfer and emotional regulation insight.",
+                    "../src/audio/A7_final_debrief.m4a",
+                )
                 emotion, analysis, eq_delta = "calm", "Reflective / Integrated", 4
             else:
-                response = "Debrief received, but include explicit strategy and transfer language for stronger consolidation."
+                response, voice = self._pick_response(
+                    "chat_error",
+                    "Debrief received, but include explicit strategy and transfer language for stronger consolidation.",
+                    "../src/audio/A7_chat_error.m4a",
+                )
                 emotion, analysis, eq_delta = "neutral", "Reflection Shallow", 0
         elif task_type == "cognitive_puzzle":
-            response = "Cognitive route validated. Prioritize chunking, pattern rehearsal, and error correction loops."
+            response, voice = self._pick_response(
+                "IQ",
+                "Cognitive route validated. Prioritize chunking, pattern rehearsal, and error correction loops.",
+                "../src/audio/A7_thinking_respose.m4a",
+            )
             emotion, analysis, eq_delta = "thinking", "Executive Processing", 1
         elif any(token in lower_text for token in ("understand", "help", "calm", "support", "hear", "hi", "hello", "architect")):
             planned_dialogue = self._execute_planning({**event, "task_type": "npc_dialogue", "command": "create_plan"})
-            response = self._extract_language_reply(
-                route_result,
+            fallback_response, voice = self._pick_response(
+                "calm",
                 "Architect link established. I can help you map intent, constraints, and next actions—what do you need solved?",
+                "../src/audio/A7_link_established.m4a",
             )
+            response = self._extract_language_reply(route_result, fallback_response)
             if isinstance(planned_dialogue, dict):
                 plan_steps = planned_dialogue.get("plan_steps")
                 if isinstance(plan_steps, int):
                     response = f"{response} (planning ready: {plan_steps} step(s))"
             emotion, analysis, eq_delta = "calm", "Architect Bridge / Engaged", 5
         elif any(token in lower_text for token in ("hurry", "now", "fix")):
-            response = "Your aggressive syntax triggers my defense subroutines! The grid cannot be forced!"
+            response, voice = self._pick_response(
+                "stress",
+                "Your aggressive syntax triggers my defense subroutines! The grid cannot be forced!",
+                "../src/audio/A7_stress_response_a.m4a",
+            )
             emotion, analysis, eq_delta = "stress", "Agitated / Defensive", -15
         else:
-            response = "Input acknowledged. However, the emotional context is ambiguous. Please recalibrate your active listening protocols."
+            response, voice = self._pick_response(
+                "chat_error",
+                "Input acknowledged. However, the emotional context is ambiguous. Please recalibrate your active listening protocols.",
+                "../src/audio/A7_chat_error_a.m4a",
+            )
             emotion, analysis, eq_delta = "neutral", "Ambiguous", 0
 
         self.shared_memory.set("mindweave:last_chat", {"event": event, "route": route_result})
@@ -415,6 +460,7 @@ class MindweaveAI:
             "emotion": emotion,
             "analysis": analysis,
             "eq_delta": eq_delta,
+            "voice": voice,
             "route": route_result,
         }
 
