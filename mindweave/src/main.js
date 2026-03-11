@@ -2,17 +2,42 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-  // --- 1. SYSTEM INITIALIZATION & API KEY CHECK ---
   const apiKey = localStorage.getItem('mindweave_llm_api_key');
   const apiStatusEl = document.getElementById('api-status');
   const chatInput = document.getElementById('player-input');
   const sendBtn = document.getElementById('btn-send');
   const chatHistory = document.getElementById('chat-history');
-  
+
+  const phaseTitle = document.getElementById('phase-title');
+  const phaseContent = document.getElementById('phase-content');
+  const phaseButtons = Array.from(document.querySelectorAll('.phase-btn'));
+  const telemetryEl = document.getElementById('telemetry');
+  const objectiveLog = document.getElementById('objective-log');
+
+  const iqValue = document.getElementById('iq-value');
+  const iqBar = document.getElementById('iq-bar');
+  const eqSyncValue = document.getElementById('eq-sync-value');
+  const eqSyncBar = document.getElementById('eq-sync-bar');
+  const progressValue = document.getElementById('progress-value');
+  const progressBar = document.getElementById('progress-bar');
+  const emotionIndicator = document.getElementById('emotion-indicator');
+
+  const gameState = {
+    phase: 'briefing',
+    iqScore: 48,
+    eqScore: 82,
+    progress: 0,
+    completedObjectives: new Set(),
+    activeSessionId: null,
+    nbackSequence: [],
+    resourceTarget: 14,
+    regulationBreaths: 0,
+  };
+
   if (!apiKey) {
     apiStatusEl.textContent = 'ERROR: No LLM Key detected. Neural link severed.';
     apiStatusEl.classList.replace('text-yellow-400', 'text-red-500');
-    appendChat('SYSTEM', 'CRITICAL ERROR: Language Model API Key missing. Please return to the R-Games Launcher and input your credentials.', 'text-red-500');
+    appendChat('SYSTEM', 'CRITICAL ERROR: API key missing. Return to launcher and configure BYOK credentials.', 'text-red-500');
   } else {
     apiStatusEl.textContent = 'Uplink Secure. LLM Active.';
     apiStatusEl.classList.replace('text-yellow-400', 'text-green-400');
@@ -21,26 +46,16 @@ document.addEventListener('DOMContentLoaded', () => {
     chatInput.focus();
   }
 
-  // Handle Exit
   document.getElementById('btn-exit').addEventListener('click', () => {
-    window.location.href = '/index.html'; // Return to launcher
+    window.location.href = '/index.html';
   });
 
-  // --- 2. THREE.JS ISOMETRIC ENVIRONMENT SETUP ---
   const container = document.getElementById('canvas-container');
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x020617, 0.04);
-
-  // Isometric Camera setup (Orthographic)
   const aspect = window.innerWidth / window.innerHeight;
   const frustumSize = 20;
-  const camera = new THREE.OrthographicCamera(
-    frustumSize * aspect / -2, frustumSize * aspect / 2,
-    frustumSize / 2, frustumSize / -2,
-    1, 1000
-  );
-  
-  // Position camera for isometric view
+  const camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, 1, 1000);
   camera.position.set(20, 20, 20);
   camera.lookAt(0, 0, 0);
 
@@ -49,121 +64,90 @@ document.addEventListener('DOMContentLoaded', () => {
   renderer.setPixelRatio(window.devicePixelRatio);
   container.appendChild(renderer.domElement);
 
-  // Lighting
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-  scene.add(ambientLight);
-  
-  const dirLight = new THREE.DirectionalLight(0x38bdf8, 2); // Neural blue tint
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enablePan = false;
+  controls.enableZoom = false;
+  controls.enableDamping = true;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+  const dirLight = new THREE.DirectionalLight(0x38bdf8, 2);
   dirLight.position.set(10, 20, 10);
   scene.add(dirLight);
-
-  const redLight = new THREE.PointLight(0xef4444, 1.5, 20); // Traffic red tint
+  const redLight = new THREE.PointLight(0xef4444, 1.5, 20);
   redLight.position.set(-5, 5, -5);
   scene.add(redLight);
 
-  // Procedural Grid (The "Fractured Society" IQ Logic Puzzle base)
   const gridGroup = new THREE.Group();
-  const gridSize = 7;
-  const tileSize = 1.9;
-  
-  const tileGeo = new THREE.BoxGeometry(tileSize, 0.5, tileSize);
-  const tileMat = new THREE.MeshStandardMaterial({ 
-    color: 0x1e293b, 
-    roughness: 0.8,
-    metalness: 0.2,
-    transparent: true,
-    opacity: 0.8
-  });
-
-  for (let i = -gridSize/2; i < gridSize/2; i++) {
-    for (let j = -gridSize/2; j < gridSize/2; j++) {
-      // Randomly drop tiles to simulate a fractured grid
-      if (Math.random() > 0.85) continue; 
-      
-      const mesh = new THREE.Mesh(tileGeo, tileMat);
+  const tileGeo = new THREE.BoxGeometry(1.9, 0.5, 1.9);
+  for (let i = -3; i < 4; i++) {
+    for (let j = -3; j < 4; j++) {
+      if (Math.random() > 0.85) continue;
+      const mat = new THREE.MeshStandardMaterial({ color: Math.random() > 0.9 ? 0x38bdf8 : 0x1e293b, emissive: 0x0ea5e9, emissiveIntensity: Math.random() > 0.9 ? 0.5 : 0.08 });
+      const mesh = new THREE.Mesh(tileGeo, mat);
       mesh.position.set(i * 2, (Math.random() * 0.5) - 0.25, j * 2);
-      
-      // Highlight some tiles to simulate active "Logic Gates"
-      if (Math.random() > 0.9) {
-        mesh.material = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0ea5e9, emissiveIntensity: 0.5 });
-      }
+      mesh.userData.baseY = mesh.position.y;
       gridGroup.add(mesh);
     }
   }
   scene.add(gridGroup);
 
-  // --- 3. THE NPC AVATAR (EQ MECHANIC) ---
-  // Since we don't have external assets, we use a procedural geometric shape
-  // that morphs/spins to represent the NPC's emotional state.
-  const npcGeo = new THREE.IcosahedronGeometry(1.5, 1);
-  const npcMat = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff,
-    emissive: 0x222222,
-    roughness: 0.1,
-    transmission: 0.9, // glass-like
-    thickness: 1.0,
-  });
-  const npcMesh = new THREE.Mesh(npcGeo, npcMat);
+  const npcMesh = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.5, 1),
+    new THREE.MeshPhysicalMaterial({ color: 0xffffff, emissive: 0x38bdf8, roughness: 0.1, transmission: 0.8, thickness: 1.0 })
+  );
   npcMesh.position.set(0, 3, 0);
   scene.add(npcMesh);
 
-  // NPC floating animation variables
-  let clock = new THREE.Clock();
+  const emotionColors = { neutral: 0x38bdf8, stress: 0xef4444, calm: 0x10b981, thinking: 0xa855f7 };
   let currentEmotion = 'neutral';
-  const emotionColors = {
-    'neutral': 0x38bdf8, // blue
-    'stress': 0xef4444,  // red
-    'calm': 0x10b981,    // green
-    'thinking': 0xa855f7 // purple
-  };
 
-  // --- 4. EQ & LLM CHAT LOGIC ---
-  const emotionIndicator = document.getElementById('emotion-indicator');
-  const eqSyncValue = document.getElementById('eq-sync-value');
-  const eqSyncBar = document.getElementById('eq-sync-bar');
-  let currentEqScore = 82;
-  let activeSessionId = null;
+  function renderTelemetry() {
+    telemetryEl.innerHTML = `
+      <div>Phase: ${gameState.phase.toUpperCase()}</div>
+      <div>Objectives: ${gameState.completedObjectives.size}/7</div>
+      <div>Session: ${gameState.activeSessionId || 'pending'}</div>
+      <div>Breaths: ${gameState.regulationBreaths}</div>
+    `;
+  }
 
-  async function ensureMindweaveSelected() {
-    const selectionResp = await fetch('/api/select-game', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ game: 'mindweave' })
-    });
-
-    if (!selectionResp.ok) {
-      const errorPayload = await selectionResp.json().catch(() => ({}));
-      throw new Error(errorPayload.error || 'Unable to initialize Mindweave backend');
+  function markObjective(id, label) {
+    if (!gameState.completedObjectives.has(id)) {
+      gameState.completedObjectives.add(id);
+      appendChat('SYSTEM', `[Objective complete] ${label}`, 'text-emerald-400');
+      const percent = Math.round((gameState.completedObjectives.size / 7) * 100);
+      gameState.progress = percent;
+      progressValue.textContent = `${percent}%`;
+      progressBar.style.width = `${percent}%`;
+      renderObjectives();
     }
+    renderTelemetry();
+  }
 
-    const selectedPayload = await selectionResp.json();
-    activeSessionId = selectedPayload.session_id || activeSessionId;
-
-    const selectedGameResp = await fetch('/api/selected-game');
-    if (selectedGameResp.ok) {
-      const selectedGamePayload = await selectedGameResp.json().catch(() => ({}));
-      activeSessionId = selectedGamePayload.session_id || activeSessionId;
-    }
+  function renderObjectives() {
+    objectiveLog.innerHTML = [
+      ['briefing_read', 'Complete mission briefing'],
+      ['nback_clear', 'Pass dual n-back memory drill'],
+      ['resource_clear', 'Stabilize resource routing'],
+      ['logic_clear', 'Repair logic gate'],
+      ['micro_clear', 'Identify micro-expression'],
+      ['regulation_clear', 'Finish regulation breaths'],
+      ['debrief_submit', 'Submit metacognitive debrief'],
+    ].map(([id, label]) => `<div class="${gameState.completedObjectives.has(id) ? 'text-emerald-400' : 'text-slate-500'}">${gameState.completedObjectives.has(id) ? '✓' : '•'} ${label}</div>`).join('');
   }
 
   function updateNPCState(emotion, textIndicator) {
     currentEmotion = emotion;
     emotionIndicator.textContent = `Analysis: ${textIndicator}`;
-    
-    // Tween color transition (simplified for vanilla JS)
-    const targetColor = new THREE.Color(emotionColors[emotion] || emotionColors['neutral']);
-    npcMesh.material.emissive.copy(targetColor);
+    npcMesh.material.emissive.copy(new THREE.Color(emotionColors[emotion] || emotionColors.neutral));
     npcMesh.material.emissiveIntensity = 0.8;
   }
 
-  function adjustEQScore(amount) {
-    currentEqScore = Math.max(0, Math.min(100, currentEqScore + amount));
-    eqSyncValue.textContent = `${currentEqScore}%`;
-    eqSyncBar.style.width = `${currentEqScore}%`;
-    
-    if (currentEqScore < 40) eqSyncBar.style.backgroundColor = 'var(--traffic-red)';
-    else if (currentEqScore < 70) eqSyncBar.style.backgroundColor = '#eab308'; // yellow
-    else eqSyncBar.style.backgroundColor = '#10b981'; // green
+  function updateBars() {
+    iqValue.textContent = `${gameState.iqScore}%`;
+    iqBar.style.width = `${gameState.iqScore}%`;
+    eqSyncValue.textContent = `${gameState.eqScore}%`;
+    eqSyncBar.style.width = `${gameState.eqScore}%`;
+    eqSyncBar.style.backgroundColor = gameState.eqScore < 40 ? 'var(--traffic-red)' : gameState.eqScore < 70 ? '#eab308' : '#10b981';
   }
 
   function appendChat(sender, message, colorClass = 'text-white') {
@@ -174,51 +158,211 @@ document.addEventListener('DOMContentLoaded', () => {
     chatHistory.scrollTop = chatHistory.scrollHeight;
   }
 
-  async function handleChatSubmit() {
-    const text = chatInput.value.trim();
-    if (!text || !apiKey) return;
+  async function ensureMindweaveSelected() {
+    const selectionResp = await fetch('/api/select-game', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'mindweave' })
+    });
+    if (!selectionResp.ok) throw new Error('Unable to initialize Mindweave backend');
+    const selectedPayload = await selectionResp.json();
+    gameState.activeSessionId = selectedPayload.session_id || null;
+  }
 
-    appendChat('Weaver', text);
-    chatInput.value = '';
-    chatInput.disabled = true;
-    sendBtn.disabled = true;
-    updateNPCState('thinking', 'Processing Semantics...');
-
+  async function sendTaskMessage(message, taskType = 'npc_dialogue') {
+    if (!apiKey) return;
     try {
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Mindweave-API-Key': apiKey,
-        },
+        headers: { 'Content-Type': 'application/json', 'X-Mindweave-API-Key': apiKey },
         body: JSON.stringify({
-          session_id: activeSessionId,
+          session_id: gameState.activeSessionId,
           player_id: 'weaver',
-          message: text,
-          task_type: 'npc_dialogue',
-          telemetry: {
-            source: 'mindweave_frontend',
-            timestamp: Date.now(),
-          },
+          message,
+          task_type: taskType,
+          telemetry: { phase: gameState.phase, iq: gameState.iqScore, eq: gameState.eqScore, timestamp: Date.now() }
         })
       });
-
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || payload.message || 'Chat request failed');
-      }
-
-      updateNPCState(payload.emotion || 'neutral', payload.analysis || 'Backend Synced');
-      adjustEQScore(Number(payload.eq_delta || 0));
+      if (!response.ok) throw new Error(payload.error || 'Chat request failed');
+      updateNPCState(payload.emotion || 'neutral', payload.analysis || 'Synced');
+      gameState.eqScore = Math.max(0, Math.min(100, gameState.eqScore + Number(payload.eq_delta || 0)));
+      updateBars();
       appendChat('Architect-7', payload.reply || 'No response generated.');
     } catch (error) {
       appendChat('SYSTEM', `Backend sync failed: ${error.message}`, 'text-red-500');
       updateNPCState('stress', 'Link Unstable');
-      adjustEQScore(-5);
-    } finally {
-      chatInput.disabled = false;
-      sendBtn.disabled = false;
-      chatInput.focus();
+    }
+    renderTelemetry();
+  }
+
+  function renderPhase() {
+    phaseButtons.forEach((btn) => btn.classList.toggle('phase-active', btn.dataset.phase === gameState.phase));
+
+    if (gameState.phase === 'briefing') {
+      phaseTitle.textContent = 'Mission Briefing';
+      phaseContent.innerHTML = `
+        <div class="mindweave-card space-y-2">
+          <p>Welcome Weaver. You must restore a fractured society using cognitive planning, emotional diplomacy, and reflective learning.</p>
+          <ul class="list-disc pl-5 text-slate-300 text-xs space-y-1">
+            <li>IQ Engine: Dual N-Back, resource balancing, logic gates.</li>
+            <li>EQ Engine: micro-expression reading, empathy dialogue, emotional regulation.</li>
+            <li>Debrief: explain strategy, transfer to real-world behavior.</li>
+          </ul>
+          <button id="start-campaign" class="mindweave-action">Acknowledge Briefing</button>
+        </div>`;
+      document.getElementById('start-campaign').onclick = () => {
+        markObjective('briefing_read', 'Briefing acknowledged');
+        setPhase('iq');
+      };
+    }
+
+    if (gameState.phase === 'iq') {
+      if (!gameState.nbackSequence.length) gameState.nbackSequence = Array.from({ length: 6 }, () => Math.ceil(Math.random() * 4));
+      phaseTitle.textContent = 'IQ Systems Repair';
+      phaseContent.innerHTML = `
+        <div class="space-y-3 text-xs">
+          <div class="mindweave-card">
+            <strong>Dual N-Back (2-back)</strong>
+            <p>Sequence: ${gameState.nbackSequence.join(' - ')}</p>
+            <p>What is the last number that matches two steps earlier?</p>
+            <input id="nback-input" class="mindweave-input w-20" type="number" min="1" max="4" />
+            <button id="nback-submit" class="mindweave-action ml-2">Validate</button>
+          </div>
+          <div class="mindweave-card">
+            <strong>Resource Management</strong>
+            <p>Allocate power cores A + B to reach exact stabilization target (${gameState.resourceTarget}).</p>
+            <input id="resource-a" class="mindweave-input w-16" type="number" value="7" /> +
+            <input id="resource-b" class="mindweave-input w-16" type="number" value="7" />
+            <button id="resource-submit" class="mindweave-action ml-2">Route</button>
+          </div>
+          <div class="mindweave-card">
+            <strong>Logic Gate Repair</strong>
+            <p>Inputs: A=true, B=false. Choose output for (A AND B) OR (NOT B).</p>
+            <select id="logic-choice" class="mindweave-input"><option>false</option><option>true</option></select>
+            <button id="logic-submit" class="mindweave-action ml-2">Commit</button>
+          </div>
+        </div>`;
+
+      document.getElementById('nback-submit').onclick = () => {
+        const guess = Number(document.getElementById('nback-input').value);
+        const expected = gameState.nbackSequence[gameState.nbackSequence.length - 3];
+        if (guess === expected) {
+          gameState.iqScore = Math.min(100, gameState.iqScore + 12);
+          markObjective('nback_clear', 'Dual N-Back solved');
+          appendChat('SYSTEM', 'Working memory lock acquired.', 'text-emerald-400');
+        } else {
+          gameState.iqScore = Math.max(0, gameState.iqScore - 6);
+          appendChat('SYSTEM', 'N-back mismatch. Retry with pattern focus.', 'text-yellow-400');
+        }
+        updateBars();
+      };
+
+      document.getElementById('resource-submit').onclick = () => {
+        const a = Number(document.getElementById('resource-a').value);
+        const b = Number(document.getElementById('resource-b').value);
+        if (a + b === gameState.resourceTarget) {
+          gameState.iqScore = Math.min(100, gameState.iqScore + 10);
+          markObjective('resource_clear', 'Resource routing stable');
+        } else {
+          gameState.iqScore = Math.max(0, gameState.iqScore - 4);
+          appendChat('SYSTEM', 'Supply chain imbalance detected.', 'text-yellow-400');
+        }
+        updateBars();
+      };
+
+      document.getElementById('logic-submit').onclick = () => {
+        const output = document.getElementById('logic-choice').value;
+        if (output === 'true') {
+          gameState.iqScore = Math.min(100, gameState.iqScore + 10);
+          markObjective('logic_clear', 'Logic gate repaired');
+        } else {
+          gameState.iqScore = Math.max(0, gameState.iqScore - 4);
+          appendChat('SYSTEM', 'Gate output incorrect.', 'text-yellow-400');
+        }
+        if (gameState.completedObjectives.has('nback_clear') && gameState.completedObjectives.has('resource_clear') && gameState.completedObjectives.has('logic_clear')) {
+          setPhase('eq');
+        }
+        updateBars();
+      };
+    }
+
+    if (gameState.phase === 'eq') {
+      phaseTitle.textContent = 'EQ Diplomacy & Regulation';
+      phaseContent.innerHTML = `
+        <div class="space-y-3 text-xs">
+          <div class="mindweave-card">
+            <strong>Micro-expression Probe (FACS-inspired)</strong>
+            <p>NPC profile: brow raise + lip press + avert gaze. Best emotional interpretation?</p>
+            <select id="micro-choice" class="mindweave-input"><option value="fear">Fear / uncertainty</option><option value="joy">Joy</option><option value="disgust">Disgust</option></select>
+            <button id="micro-submit" class="mindweave-action ml-2">Analyze</button>
+          </div>
+          <div class="mindweave-card">
+            <strong>Empathy Bridge</strong>
+            <p>Use chat to validate, reflect, and guide Architect-7. Suggestion: "I hear your concern, let's stabilize one subsystem at a time."</p>
+          </div>
+          <div class="mindweave-card">
+            <strong>Biometric Regulation</strong>
+            <p>Complete four breathing cycles using Regulation Pulse.</p>
+          </div>
+        </div>`;
+
+      document.getElementById('micro-submit').onclick = () => {
+        const value = document.getElementById('micro-choice').value;
+        if (value === 'fear') {
+          gameState.eqScore = Math.min(100, gameState.eqScore + 8);
+          markObjective('micro_clear', 'Micro-expression recognized');
+          updateNPCState('calm', 'Validated and understood');
+        } else {
+          gameState.eqScore = Math.max(0, gameState.eqScore - 8);
+          updateNPCState('stress', 'Misread social cue');
+        }
+        updateBars();
+      };
+    }
+
+    if (gameState.phase === 'debrief') {
+      phaseTitle.textContent = 'Metacognitive Debrief';
+      phaseContent.innerHTML = `
+        <div class="mindweave-card text-xs space-y-3">
+          <p>Describe your strategy and how it transfers to real-world collaboration.</p>
+          <textarea id="debrief-text" class="mindweave-input w-full h-28" placeholder="I slowed down, chunked information, validated emotion, and prioritized system repair..."></textarea>
+          <button id="debrief-submit" class="mindweave-action">Submit Debrief</button>
+        </div>`;
+      document.getElementById('debrief-submit').onclick = async () => {
+        const reflection = document.getElementById('debrief-text').value.trim();
+        if (reflection.length < 20) {
+          appendChat('SYSTEM', 'Debrief too short. Include strategy + transfer insight.', 'text-yellow-400');
+          return;
+        }
+        markObjective('debrief_submit', 'Debrief submitted');
+        await sendTaskMessage(`Debrief reflection: ${reflection}`, 'debrief_reflection');
+        appendChat('SYSTEM', 'Campaign loop complete. Far-transfer reinforcement logged.', 'text-emerald-400');
+      };
+    }
+
+    renderTelemetry();
+  }
+
+  function setPhase(phase) {
+    gameState.phase = phase;
+    renderPhase();
+  }
+
+  async function handleChatSubmit() {
+    const text = chatInput.value.trim();
+    if (!text || !apiKey) return;
+    appendChat('Weaver', text);
+    chatInput.value = '';
+    updateNPCState('thinking', 'Processing Semantics...');
+    await sendTaskMessage(text, gameState.phase === 'debrief' ? 'debrief_reflection' : 'npc_dialogue');
+
+    if (gameState.phase === 'eq' && /understand|hear|support|calm|together/i.test(text)) {
+      gameState.eqScore = Math.min(100, gameState.eqScore + 5);
+      updateBars();
+      if (gameState.completedObjectives.has('micro_clear') && gameState.completedObjectives.has('regulation_clear')) {
+        setPhase('debrief');
+      }
     }
   }
 
@@ -228,7 +372,30 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('btn-empathy-ping').addEventListener('click', () => {
-    appendChat('SYSTEM', '[Active Listening Ping Initiated. Architect-7 is masking fear regarding data corruption.]', 'text-slate-500 italic');
+    appendChat('SYSTEM', '[Empathy Ping] Architect-7 is masking fear and resource shame. Use validation before directives.', 'text-slate-400 italic');
+  });
+
+  document.getElementById('btn-reset-iq').addEventListener('click', () => {
+    gameState.nbackSequence = [];
+    gameState.iqScore = 48;
+    updateBars();
+    if (gameState.phase === 'iq') renderPhase();
+  });
+
+  document.getElementById('btn-regulate').addEventListener('click', () => {
+    gameState.regulationBreaths += 1;
+    gameState.eqScore = Math.min(100, gameState.eqScore + 3);
+    appendChat('SYSTEM', `Breath cycle ${gameState.regulationBreaths}/4 completed.`, 'text-emerald-400');
+    if (gameState.regulationBreaths >= 4) {
+      markObjective('regulation_clear', 'Biometric regulation cycle completed');
+      if (gameState.phase === 'eq' && gameState.completedObjectives.has('micro_clear')) setPhase('debrief');
+    }
+    updateBars();
+    renderTelemetry();
+  });
+
+  phaseButtons.forEach((btn) => {
+    btn.addEventListener('click', () => setPhase(btn.dataset.phase));
   });
 
   ensureMindweaveSelected().catch((error) => {
@@ -237,36 +404,34 @@ document.addEventListener('DOMContentLoaded', () => {
     apiStatusEl.classList.replace('text-green-400', 'text-red-500');
   });
 
-  // --- 5. RENDER LOOP ---
+  appendChat('Architect-7', 'Weaver, the socio-cognitive lattice is collapsing. Begin with mission briefing and restore balance.');
+  updateBars();
+  renderObjectives();
+  setPhase('briefing');
+
   window.addEventListener('resize', () => {
-    const aspect = window.innerWidth / window.innerHeight;
-    camera.left = -frustumSize * aspect / 2;
-    camera.right = frustumSize * aspect / 2;
+    const nextAspect = window.innerWidth / window.innerHeight;
+    camera.left = -frustumSize * nextAspect / 2;
+    camera.right = frustumSize * nextAspect / 2;
     camera.top = frustumSize / 2;
     camera.bottom = -frustumSize / 2;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
+  const clock = new THREE.Clock();
   function animate() {
     requestAnimationFrame(animate);
     const time = clock.getElapsedTime();
+    controls.update();
 
-    // Idle animations for the procedual grid
     gridGroup.children.forEach((mesh, index) => {
-      mesh.position.y = mesh.userData.baseY !== undefined ? mesh.userData.baseY : mesh.position.y;
-      if (mesh.userData.baseY === undefined) mesh.userData.baseY = mesh.position.y;
-      
-      // Gentle sine wave floating effect
       mesh.position.y = mesh.userData.baseY + Math.sin(time * 2 + index * 0.1) * 0.1;
     });
 
-    // NPC Animations
     npcMesh.rotation.y += 0.01;
     npcMesh.rotation.x += 0.005;
-    npcMesh.position.y = 3 + Math.sin(time * 1.5) * 0.3; // Breathing effect
-    
-    // If stressed, make it glitch/jitter
+    npcMesh.position.y = 3 + Math.sin(time * 1.5) * 0.3;
     if (currentEmotion === 'stress') {
       npcMesh.position.x = (Math.random() - 0.5) * 0.1;
       npcMesh.scale.setScalar(1 + Math.sin(time * 20) * 0.05);
