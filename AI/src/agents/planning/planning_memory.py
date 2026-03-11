@@ -76,7 +76,7 @@ class PlanningMemory:
         if stats and stats['total'] > 0:
             return stats['success'] / stats['total']
         return 0.0
-    
+
     def get_min_duration(self, task_name: str) -> float:
         """Retrieve the minimum observed duration for a given task"""
         durations = []
@@ -92,8 +92,15 @@ class PlanningMemory:
         if durations:
             return min(durations)
     
-        logger.warning(f"No valid duration data found for task '{task_name}'. Returning infinity.")
-        return float('inf')
+        # Return a conservative finite fallback so repair scoring remains stable
+        # even when we have no historical executions for a task yet.
+        fallback_duration = 300.0
+        logger.info(
+            "No valid duration data found for task '%s'. Using fallback duration %.1fs.",
+            task_name,
+            fallback_duration,
+        )
+        return fallback_duration
 
     def is_sequential_task(self, task: Dict[str, Any], min_length: int) -> bool:
         """Check task sequence using execution history"""
