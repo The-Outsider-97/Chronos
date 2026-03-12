@@ -42,6 +42,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       error: '../src/audio/error.mp3',
       correct: '../src/audio/correct.mp3',
       wrong: '../src/audio/wrong.mp3',
+      heartbeat: '/src/audio/heartbeat.m4a',
+      ping: '/src/audio/ping.mp3',
     },
     voice: {
       briefing: '../src/audio/A7_01a_mission_briefing.m4a',
@@ -96,6 +98,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     nbackSequence: [],
     resourceTarget: 14,
     regulationBreaths: 0,
+    pulseSequence: {
+      targetBpm: null,
+      tolerance: 0.05,
+      tapCount: 0,
+      lastTapTime: 0,
+      tapIntervals: [],
+      awaitingInput: false,
+      active: false,
+    },
     challengeAttempts: {
       nback_clear: { count: 0, locked: false },
       resource_clear: { count: 0, locked: false },
@@ -114,6 +125,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     eq: 35,
     debrief: 20,
   };
+
+  const orderedPhases = ['briefing', 'iq', 'eq', 'debrief'];
+
+  const objectiveDefinitions = [
+    ['briefing_read', 'Complete mission briefing'],
+    ['briefing_plan', 'Lock in stabilization plan'],
+    ['nback_clear', 'Pass dual n-back memory drill'],
+    ['resource_clear', 'Stabilize resource routing'],
+    ['logic_clear', 'Repair logic gate'],
+    ['iq_threatcode_clear', 'Resolve anomaly threat code'],
+    ['micro_clear', 'Identify micro-expression'],
+    ['eq_bridge_clear', 'Deliver active listening response'],
+    ['regulation_clear', 'Reproduce Architect rhythm'],
+    ['debrief_submit', 'Submit metacognitive debrief'],
+    ['debrief_commitment', 'Define two transfer commitments'],
+  ];
 
 
   apiStatusEl.textContent = apiKey ? 'Uplink Secure. AI Backend + Key Active.' : 'Uplink Secure. AI Backend Active (no external key).';
@@ -237,6 +264,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     instance.play().catch(() => {});
   }
 
+  function playPulseBeat() {
+    if (audioState.sfxMuted) return;
+    const pulse = createAudio(audioLibrary.sfx.heartbeat);
+    pulse.volume = audioState.sfxVolume;
+    pulse.play().catch(() => {});
+  }
+
+  async function playArchitectPulseSequence(bpm) {
+    const beatIntervalMs = Math.round((60 / bpm) * 1000);
+    for (let i = 0; i < 4; i += 1) {
+      playPulseBeat();
+      appendChat('SYSTEM', `[Architect Pulse] Beat ${i + 1}/4 @ ${bpm} BPM`, 'text-sky-300');
+      await new Promise((resolve) => setTimeout(resolve, beatIntervalMs));
+    }
+  }
+
   function processVoiceQueue() {
     if (activeVoiceJob || !voiceQueue.length) return;
     const nextJob = voiceQueue.shift();
@@ -351,7 +394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderTelemetry() {
     telemetryEl.innerHTML = `
       <div>Phase: ${gameState.phase.toUpperCase()}</div>
-      <div>Objectives: ${gameState.completedObjectives.size}/7</div>
+      <div>Objectives: ${gameState.completedObjectives.size}/${objectiveDefinitions.length}</div>
       <div>Session: ${gameState.activeSessionId || 'pending'}</div>
       <div>Breaths: ${gameState.regulationBreaths}</div>
     `;
@@ -361,7 +404,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!gameState.completedObjectives.has(id)) {
       gameState.completedObjectives.add(id);
       appendChat('SYSTEM', `[Objective complete] ${label}`, 'text-emerald-400');
-      const percent = Math.round((gameState.completedObjectives.size / 7) * 100);
+      const percent = Math.round((gameState.completedObjectives.size / objectiveDefinitions.length) * 100);
       gameState.progress = percent;
       progressValue.textContent = `${percent}%`;
       progressBar.style.width = `${percent}%`;
@@ -371,15 +414,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function renderObjectives() {
-    objectiveLog.innerHTML = [
-      ['briefing_read', 'Complete mission briefing'],
-      ['nback_clear', 'Pass dual n-back memory drill'],
-      ['resource_clear', 'Stabilize resource routing'],
-      ['logic_clear', 'Repair logic gate'],
-      ['micro_clear', 'Identify micro-expression'],
-      ['regulation_clear', 'Finish regulation breaths'],
-      ['debrief_submit', 'Submit metacognitive debrief'],
-    ].map(([id, label]) => `<div class="${gameState.completedObjectives.has(id) ? 'text-emerald-400' : 'text-slate-500'}">${gameState.completedObjectives.has(id) ? '✓' : '•'} ${label}</div>`).join('');
+    objectiveLog.innerHTML = objectiveDefinitions
+      .map(([id, label]) => `<div class="${gameState.completedObjectives.has(id) ? 'text-emerald-400' : 'text-slate-500'}">${gameState.completedObjectives.has(id) ? '✓' : '•'} ${label}</div>`)
+      .join('');
+  }
+
+  function isPhaseComplete(phase) {
+    if (phase === 'briefing') return gameState.completedObjectives.has('briefing_read') && gameState.completedObjectives.has('briefing_plan');
+    if (phase === 'iq') return gameState.completedObjectives.has('nback_clear') && gameState.completedObjectives.has('resource_clear') && gameState.completedObjectives.has('logic_clear') && gameState.completedObjectives.has('iq_threatcode_clear');
+    if (phase === 'eq') return gameState.completedObjectives.has('micro_clear') && gameState.completedObjectives.has('eq_bridge_clear') && gameState.completedObjectives.has('regulation_clear');
+    if (phase === 'debrief') return gameState.completedObjectives.has('debrief_submit') && gameState.completedObjectives.has('debrief_commitment');
+    return false;
+  }
+
+  function isPhaseAccessible(targetPhase) {
+    const targetIndex = orderedPhases.indexOf(targetPhase);
+    if (targetIndex <= 0) return true;
+    for (let i = 0; i < targetIndex; i += 1) {
+      if (!isPhaseComplete(orderedPhases[i])) return false;
+    }
+    return true;
+  }
+
+  function updatePhaseButtonStates() {
+    phaseButtons.forEach((btn) => {
+      const phase = btn.dataset.phase;
+      const unlocked = isPhaseAccessible(phase);
+      btn.disabled = !unlocked;
+      btn.classList.toggle('opacity-50', !unlocked);
+      btn.classList.toggle('cursor-not-allowed', !unlocked);
+    });
   }
 
   function updateNPCState(emotion, textIndicator) {
@@ -514,6 +578,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function renderPhase() {
     phaseButtons.forEach((btn) => btn.classList.toggle('phase-active', btn.dataset.phase === gameState.phase));
+    updatePhaseButtonStates();
 
     if (gameState.phase === 'briefing') {
       phaseTitle.textContent = 'Mission Briefing';
@@ -525,9 +590,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             <li>EQ Engine: micro-expression reading, empathy dialogue, emotional regulation.</li>
             <li>Debrief: explain strategy, transfer to real-world behavior.</li>
           </ul>
+          <div class="mt-2">
+            <label class="block mb-1">Choose initial stabilization order:</label>
+            <select id="briefing-plan" class="mindweave-input w-full">
+              <option value="">Select sequence...</option>
+              <option value="wrong">Debrief → EQ → IQ</option>
+              <option value="correct">IQ → EQ → Debrief</option>
+              <option value="wrong2">EQ → IQ → Debrief</option>
+            </select>
+          </div>
           <button id="start-campaign" class="mindweave-action">Acknowledge Briefing</button>
         </div>`;
       document.getElementById('start-campaign').onclick = async () => {
+        const plan = document.getElementById('briefing-plan').value;
+        if (plan !== 'correct') {
+          appendChat('SYSTEM', 'Lock briefing by choosing the proper stabilization order first.', 'text-yellow-400');
+          playSfx('error');
+          return;
+        }
+        markObjective('briefing_plan', 'Stabilization sequence confirmed');
         markObjective('briefing_read', 'Briefing acknowledged');
         { const ack = pickResponse('briefing', 'Acknowledged. Mission brief locked.', audioLibrary.voice.briefingAcknowledge); appendChat('Architect-7', ack.text, 'text-white', ack.voice); }
         await enqueueVoice(audioLibrary.voice.briefingAcknowledge, { priority: voicePriority.sequence, clearQueue: true, interrupt: true, delayMs: 500 });
@@ -560,6 +641,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             <p>Inputs: A=true, B=false. Choose output for (A AND B) OR (NOT B).</p>
             <select id="logic-choice" class="mindweave-input"><option>false</option><option>true</option></select>
             <button id="logic-submit" class="mindweave-action ml-2">Commit</button>
+          </div>
+          <div class="mindweave-card">
+            <strong>Anomaly Threat Code</strong>
+            <p>Decode emergency key: if alpha=2 and beta=3, enter alpha² + beta² + alpha.</p>
+            <input id="threatcode-input" class="mindweave-input w-24" type="number" />
+            <button id="threatcode-submit" class="mindweave-action ml-2">Seal Breach</button>
           </div>
         </div>`;
 
@@ -620,7 +707,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             awardProtocolScore('iq', 15, attemptCount);
             markObjective('logic_clear', 'Logic gate repaired');
             playSfx('correct');
-            if (gameState.completedObjectives.has('nback_clear') && gameState.completedObjectives.has('resource_clear') && gameState.completedObjectives.has('logic_clear')) {
+            if (isPhaseComplete('iq')) {
               setPhase('eq');
             }
             updateBars();
@@ -633,6 +720,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateBars();
           }
         );
+      };
+
+      document.getElementById('threatcode-submit').onclick = () => {
+        const code = Number(document.getElementById('threatcode-input').value);
+        if (code !== 15) {
+          gameState.iqScore = Math.max(0, gameState.iqScore - 5);
+          appendChat('SYSTEM', 'Threat code mismatch. Recalculate anomaly key.', 'text-yellow-400');
+          playSfx('wrong');
+          updateBars();
+          return;
+        }
+        gameState.iqScore = Math.min(100, gameState.iqScore + 8);
+        awardProtocolScore('iq', 10, 1);
+        markObjective('iq_threatcode_clear', 'Anomaly threat code neutralized');
+        playSfx('correct');
+        updateBars();
+        if (isPhaseComplete('iq')) setPhase('eq');
       };
     }
 
@@ -649,10 +753,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div class="mindweave-card">
             <strong>Empathy Bridge</strong>
             <p>Use chat to validate, reflect, and guide Architect-7. Suggestion: "I hear your concern, let's stabilize one subsystem at a time."</p>
+            <button id="eq-bridge-submit" class="mindweave-action mt-2">Confirm Active Listening</button>
           </div>
           <div class="mindweave-card">
             <strong>Biometric Regulation</strong>
-            <p>Complete four breathing cycles using Regulation Pulse.</p>
+            <p>Architect sets a BPM. Listen to 4 beats, then reproduce with 4 Regulation Pulse clicks (±5% BPM tolerance).</p>
+            <button id="start-regulation-sequence" class="mindweave-action mt-2">Start Pulse Regulation Sequence</button>
           </div>
         </div>`;
 
@@ -680,6 +786,35 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         );
       };
+
+      document.getElementById('eq-bridge-submit').onclick = () => {
+        if (!/understand|hear|support|calm|together/i.test(chatHistory.textContent)) {
+          appendChat('SYSTEM', 'Use chat to send at least one active-listening response first.', 'text-yellow-400');
+          playSfx('error');
+          return;
+        }
+        markObjective('eq_bridge_clear', 'Active listening confirmation logged');
+        appendChat('SYSTEM', 'Empathy bridge stabilized.', 'text-emerald-400');
+        playSfx('correct');
+      };
+
+      document.getElementById('start-regulation-sequence').onclick = async () => {
+        if (gameState.pulseSequence.active) return;
+        const targetBpm = Math.floor(Math.random() * 36) + 72;
+        gameState.pulseSequence = {
+          ...gameState.pulseSequence,
+          targetBpm,
+          tapCount: 0,
+          lastTapTime: 0,
+          tapIntervals: [],
+          awaitingInput: false,
+          active: true,
+        };
+        appendChat('Architect-7', `Pulse protocol engaged. Match my rhythm at ${targetBpm} BPM.`, 'text-white');
+        await playArchitectPulseSequence(targetBpm);
+        gameState.pulseSequence.awaitingInput = true;
+        appendChat('SYSTEM', 'Your turn: click Regulation Pulse four times to reproduce the BPM.', 'text-sky-300');
+      };
     }
 
     if (gameState.phase === 'debrief') {
@@ -689,16 +824,25 @@ document.addEventListener('DOMContentLoaded', async () => {
           <p>Describe your strategy and how it transfers to real-world collaboration.</p>
           <textarea id="debrief-text" class="mindweave-input w-full h-28" placeholder="I slowed down, chunked information, validated emotion, and prioritized system repair..."></textarea>
           <button id="debrief-submit" class="mindweave-action">Submit Debrief</button>
+          <label class="block">List two concrete transfer commitments (one per line):</label>
+          <textarea id="debrief-commitment" class="mindweave-input w-full h-20" placeholder="1) Pause before reacting in conflict\n2) Validate teammate concerns before proposing fixes"></textarea>
         </div>`;
       document.getElementById('debrief-submit').onclick = async () => {
         const reflection = document.getElementById('debrief-text').value.trim();
+        const commitments = document.getElementById('debrief-commitment').value.trim().split('\n').map((line) => line.trim()).filter(Boolean);
         if (reflection.length < 20) {
           appendChat('SYSTEM', 'Debrief too short. Include strategy + transfer insight.', 'text-yellow-400');
           { const debriefRetry = pickResponse('debrief', 'Debrief received, but include explicit strategy and transfer language for stronger consolidation.', audioLibrary.voice.debriefReceived); appendChat('Architect-7', debriefRetry.text, 'text-white', debriefRetry.voice); }
           playSfx('error');
           return;
         }
+        if (commitments.length < 2) {
+          appendChat('SYSTEM', 'Include at least two transfer commitments.', 'text-yellow-400');
+          playSfx('error');
+          return;
+        }
         markObjective('debrief_submit', 'Debrief submitted');
+        markObjective('debrief_commitment', 'Transfer commitments logged');
         gameState.protocolScore.debrief = protocolWeights.debrief;
         renderFinalScore();
         await sendTaskMessage(`Debrief reflection: ${reflection}`, 'debrief_reflection');
@@ -723,6 +867,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       logic_clear: { count: 0, locked: false },
       micro_clear: { count: 0, locked: false },
     };
+    gameState.pulseSequence = {
+      targetBpm: null,
+      tolerance: 0.05,
+      tapCount: 0,
+      lastTapTime: 0,
+      tapIntervals: [],
+      awaitingInput: false,
+      active: false,
+    };
     gameState.protocolScore = { iq: 0, eq: 0, debrief: 0 };
 
 
@@ -736,6 +889,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function setPhase(phase, options = {}) {
     const { skipProtocolVoice = false } = options;
+    if (!isPhaseAccessible(phase)) {
+      appendChat('SYSTEM', `Access denied: complete ${orderedPhases[orderedPhases.indexOf(phase) - 1].toUpperCase()} protocol first.`, 'text-yellow-400');
+      playSfx('error');
+      return;
+    }
     gameState.phase = phase;
     renderPhase();
     const phaseGroup = phase === 'iq' ? 'IQ' : phase === 'eq' ? 'EQ' : phase;
@@ -759,7 +917,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (gameState.phase === 'eq' && /understand|hear|support|calm|together/i.test(text)) {
       gameState.eqScore = Math.min(100, gameState.eqScore + 5);
       updateBars();
-      if (gameState.completedObjectives.has('micro_clear') && gameState.completedObjectives.has('regulation_clear')) {
+      if (gameState.completedObjectives.has('micro_clear') && gameState.completedObjectives.has('regulation_clear') && gameState.completedObjectives.has('eq_bridge_clear')) {
         setPhase('debrief');
       }
     }
@@ -771,6 +929,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-empathy-ping').addEventListener('click', () => {
+    if (audioState.sfxMuted === false) {
+      const ping = createAudio(audioLibrary.sfx.ping);
+      ping.volume = audioState.sfxVolume;
+      ping.play().catch(() => {});
+    }
     appendChat('SYSTEM', '[Empathy Ping] Architect-7 is masking fear and resource shame. Use validation before directives.', 'text-slate-400 italic');
   });
 
@@ -785,15 +948,50 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-regulate').addEventListener('click', () => {
-    gameState.regulationBreaths += 1;
-    gameState.eqScore = Math.min(100, gameState.eqScore + 3);
-    appendChat('SYSTEM', `Breath cycle ${gameState.regulationBreaths}/4 completed.`, 'text-emerald-400');
-    if (gameState.regulationBreaths >= 4) {
-      gameState.regulationBreaths = 4;
-      gameState.protocolScore.eq = Math.min(protocolWeights.eq, gameState.protocolScore.eq + 15);
+    if (gameState.phase !== 'eq') {
+      appendChat('SYSTEM', 'Regulation Pulse is only available in EQ mode.', 'text-yellow-400');
+      playSfx('error');
+      return;
+    }
+    if (!gameState.pulseSequence.awaitingInput) {
+      appendChat('SYSTEM', 'Start the pulse regulation sequence first, then mirror the Architect BPM.', 'text-yellow-400');
+      playSfx('error');
+      return;
+    }
+    const now = performance.now();
+    playPulseBeat();
+    gameState.pulseSequence.tapCount += 1;
+    if (gameState.pulseSequence.lastTapTime) {
+      gameState.pulseSequence.tapIntervals.push(now - gameState.pulseSequence.lastTapTime);
+    }
+    gameState.pulseSequence.lastTapTime = now;
+    gameState.regulationBreaths = Math.min(4, gameState.pulseSequence.tapCount);
+    appendChat('SYSTEM', `Regulation pulse ${gameState.pulseSequence.tapCount}/4 logged.`, 'text-sky-300');
+
+    if (gameState.pulseSequence.tapCount >= 4) {
+      const averageInterval = gameState.pulseSequence.tapIntervals.reduce((sum, item) => sum + item, 0) / gameState.pulseSequence.tapIntervals.length;
+      const playerBpm = Math.round(60000 / averageInterval);
+      const targetBpm = gameState.pulseSequence.targetBpm;
+      const tolerance = targetBpm * gameState.pulseSequence.tolerance;
+      const difference = Math.abs(playerBpm - targetBpm);
+      if (difference <= tolerance) {
+        gameState.eqScore = Math.min(100, gameState.eqScore + 8);
+        gameState.protocolScore.eq = Math.min(protocolWeights.eq, gameState.protocolScore.eq + 15);
+        markObjective('regulation_clear', `Pulse rhythm matched (${playerBpm} BPM vs ${targetBpm} BPM)`);
+        appendChat('SYSTEM', `Pulse match success. Your BPM ${playerBpm} is within ±5% of ${targetBpm}.`, 'text-emerald-400');
+        playSfx('correct');
+      } else {
+        gameState.eqScore = Math.max(0, gameState.eqScore - 6);
+        appendChat('SYSTEM', `Pulse mismatch. Your BPM ${playerBpm} diverged from ${targetBpm}. Retry sequence.`, 'text-yellow-400');
+        playSfx('wrong');
+      }
+      gameState.pulseSequence.awaitingInput = false;
+      gameState.pulseSequence.active = false;
+      gameState.pulseSequence.tapCount = 0;
+      gameState.pulseSequence.lastTapTime = 0;
+      gameState.pulseSequence.tapIntervals = [];
       renderFinalScore();
-      markObjective('regulation_clear', 'Biometric regulation cycle completed');
-      if (gameState.phase === 'eq' && gameState.completedObjectives.has('micro_clear')) setPhase('debrief');
+      if (gameState.phase === 'eq' && isPhaseComplete('eq')) setPhase('debrief');
     }
     updateBars();
     renderTelemetry();
@@ -843,6 +1041,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   phaseButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const phase = btn.dataset.phase;
+      if (!isPhaseAccessible(phase)) {
+        appendChat('SYSTEM', 'Complete the current protocol before advancing.', 'text-yellow-400');
+        playSfx('error');
+        return;
+      }
       setPhase(phase, { skipProtocolVoice: phase === 'briefing' });
       if (phase === 'briefing') {
         enqueueVoice(audioLibrary.voice.protocol1, { priority: voicePriority.protocol, clearQueue: true, interrupt: true });
