@@ -44,6 +44,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       wrong: '../src/audio/wrong.mp3',
       heartbeat: '/src/audio/heartbeat.m4a',
       ping: '/src/audio/ping.mp3',
+      powerDown: '/src/audio/power_down.m4a',
+      achieve: '/src/audio/achieve.mp3',
     },
     voice: {
       briefing: '../src/audio/A7_01a_mission_briefing.m4a',
@@ -88,15 +90,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   let activeVoiceJob = null;
   let hasPlayedStartupBriefing = false;
 
+  let hasPlayedAchieveCue = false;
+
   const gameState = {
     phase: 'briefing',
-    iqScore: 48,
-    eqScore: 82,
+    iqScore: 45,
+    eqScore: 80,
     progress: 0,
     completedObjectives: new Set(),
     activeSessionId: null,
     nbackSequence: [],
-    resourceTarget: 14,
+    resourceTarget: Math.floor(Math.random() * 13) + 8,
+    threatCodePuzzle: null,
     regulationBreaths: 0,
     pulseSequence: {
       targetBpm: null,
@@ -512,6 +517,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderFinalScore() {
     const totalScore = gameState.protocolScore.iq + gameState.protocolScore.eq + gameState.protocolScore.debrief;
     finalScoreEl.textContent = `${totalScore} / 100`;
+    if (totalScore >= 85 && !hasPlayedAchieveCue) {
+      hasPlayedAchieveCue = true;
+      playSfx('achieve');
+    } else if (totalScore < 85) {
+      hasPlayedAchieveCue = false;
+    }
     protocolScoreListEl.innerHTML = [
       `IQ Protocol: ${gameState.protocolScore.iq}/${protocolWeights.iq}`,
       `EQ Protocol: ${gameState.protocolScore.eq}/${protocolWeights.eq}`,
@@ -576,6 +587,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderTelemetry();
   }
 
+  function generateThreatCodePuzzle() {
+    const alpha = Math.floor(Math.random() * 6) + 2;
+    const beta = Math.floor(Math.random() * 6) + 2;
+    const variants = [
+      {
+        prompt: `Decode emergency key: if alpha=${alpha} and beta=${beta}, enter alpha² + beta² + alpha.`,
+        answer: (alpha ** 2) + (beta ** 2) + alpha,
+      },
+      {
+        prompt: `Decode emergency key: if alpha=${alpha} and beta=${beta}, enter (alpha × beta) + (alpha²).`,
+        answer: (alpha * beta) + (alpha ** 2),
+      },
+      {
+        prompt: `Decode emergency key: if alpha=${alpha} and beta=${beta}, enter (alpha² + beta²) − beta.`,
+        answer: (alpha ** 2) + (beta ** 2) - beta,
+      },
+    ];
+    return variants[Math.floor(Math.random() * variants.length)];
+  }
+
+  function launchProtocolOneFromHome() {
+    markObjective('briefing_read', 'Briefing acknowledged from Home launch');
+    const ack = pickResponse('briefing', 'Home launch synchronized. Proceeding to Campaign Protocol 1.', audioLibrary.voice.briefingAcknowledge);
+    appendChat('Architect-7', ack.text, 'text-white', ack.voice);
+    enqueueVoice(audioLibrary.voice.briefingAcknowledge, {
+      priority: voicePriority.sequence,
+      clearQueue: true,
+      interrupt: true,
+      delayMs: 500,
+    }).then(() => {
+      setPhase('iq', { skipProtocolVoice: true });
+      enqueueVoice(audioLibrary.voice.protocol1, { priority: voicePriority.sequence });
+    });
+  }
+
   function renderPhase() {
     phaseButtons.forEach((btn) => btn.classList.toggle('phase-active', btn.dataset.phase === gameState.phase));
     updatePhaseButtonStates();
@@ -619,21 +665,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (gameState.phase === 'iq') {
       if (!gameState.nbackSequence.length) gameState.nbackSequence = Array.from({ length: 6 }, () => Math.ceil(Math.random() * 4));
+      if (!gameState.threatCodePuzzle) gameState.threatCodePuzzle = generateThreatCodePuzzle();
       phaseTitle.textContent = 'IQ Systems Repair';
       phaseContent.innerHTML = `
         <div class="space-y-3 text-xs">
           <div class="mindweave-card">
             <strong>Dual N-Back (2-back)</strong>
             <p>Sequence: ${gameState.nbackSequence.join(' - ')}</p>
-            <p>What is the last number that matches two steps earlier?</p>
+            <p>Enter the value at the final position's 2-back match (the number shown exactly two places before the last number).</p>
             <input id="nback-input" class="mindweave-input w-20" type="number" min="1" max="4" />
             <button id="nback-submit" class="mindweave-action ml-2">Validate</button>
           </div>
           <div class="mindweave-card">
             <strong>Resource Management</strong>
             <p>Allocate power cores A + B to reach exact stabilization target (${gameState.resourceTarget}).</p>
-            <input id="resource-a" class="mindweave-input w-16" type="number" value="7" /> +
-            <input id="resource-b" class="mindweave-input w-16" type="number" value="7" />
+            <input id="resource-a" class="mindweave-input w-16" type="number" placeholder="A" /> +
+            <input id="resource-b" class="mindweave-input w-16" type="number" placeholder="B" />
             <button id="resource-submit" class="mindweave-action ml-2">Route</button>
           </div>
           <div class="mindweave-card">
@@ -644,7 +691,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
           <div class="mindweave-card">
             <strong>Anomaly Threat Code</strong>
-            <p>Decode emergency key: if alpha=2 and beta=3, enter alpha² + beta² + alpha.</p>
+            <p>${gameState.threatCodePuzzle.prompt}</p>
             <input id="threatcode-input" class="mindweave-input w-24" type="number" />
             <button id="threatcode-submit" class="mindweave-action ml-2">Seal Breach</button>
           </div>
@@ -724,7 +771,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       document.getElementById('threatcode-submit').onclick = () => {
         const code = Number(document.getElementById('threatcode-input').value);
-        if (code !== 15) {
+        if (code !== gameState.threatCodePuzzle.answer) {
           gameState.iqScore = Math.max(0, gameState.iqScore - 5);
           appendChat('SYSTEM', 'Threat code mismatch. Recalculate anomaly key.', 'text-yellow-400');
           playSfx('wrong');
@@ -734,6 +781,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         gameState.iqScore = Math.min(100, gameState.iqScore + 8);
         awardProtocolScore('iq', 10, 1);
         markObjective('iq_threatcode_clear', 'Anomaly threat code neutralized');
+        gameState.threatCodePuzzle = generateThreatCodePuzzle();
         playSfx('correct');
         updateBars();
         if (isPhaseComplete('iq')) setPhase('eq');
@@ -821,17 +869,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       phaseTitle.textContent = 'Metacognitive Debrief';
       phaseContent.innerHTML = `
         <div class="mindweave-card text-xs space-y-3">
-          <p>Describe your strategy and how it transfers to real-world collaboration.</p>
-          <textarea id="debrief-text" class="mindweave-input w-full h-28" placeholder="I slowed down, chunked information, validated emotion, and prioritized system repair..."></textarea>
+          <p>Write 2-4 sentences explaining (1) your in-game strategy, (2) one moment where you adapted, and (3) how you'll apply that approach in real teamwork.</p>
+          <textarea id="debrief-text" class="mindweave-input w-full h-28" placeholder="Example: I slowed my pace, checked the target conditions, and corrected mistakes quickly. When Architect-7 escalated, I switched to validation before directives. In team meetings, I'll pause, confirm shared goals, then propose one concrete next step."></textarea>
           <button id="debrief-submit" class="mindweave-action">Submit Debrief</button>
-          <label class="block">List two concrete transfer commitments (one per line):</label>
+          <label class="block">List two concrete transfer commitments (one per line, each starts with an action verb):</label>
           <textarea id="debrief-commitment" class="mindweave-input w-full h-20" placeholder="1) Pause before reacting in conflict\n2) Validate teammate concerns before proposing fixes"></textarea>
         </div>`;
       document.getElementById('debrief-submit').onclick = async () => {
         const reflection = document.getElementById('debrief-text').value.trim();
         const commitments = document.getElementById('debrief-commitment').value.trim().split('\n').map((line) => line.trim()).filter(Boolean);
         if (reflection.length < 20) {
-          appendChat('SYSTEM', 'Debrief too short. Include strategy + transfer insight.', 'text-yellow-400');
+          appendChat('SYSTEM', 'Debrief too short. Submit at least 20 characters covering strategy, adaptation, and real-world transfer.', 'text-yellow-400');
           { const debriefRetry = pickResponse('debrief', 'Debrief received, but include explicit strategy and transfer language for stronger consolidation.', audioLibrary.voice.debriefReceived); appendChat('Architect-7', debriefRetry.text, 'text-white', debriefRetry.voice); }
           playSfx('error');
           return;
@@ -861,6 +909,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     gameState.completedObjectives = new Set();
     gameState.nbackSequence = [];
     gameState.regulationBreaths = 0;
+    gameState.resourceTarget = Math.floor(Math.random() * 13) + 8;
+    gameState.threatCodePuzzle = null;
     gameState.challengeAttempts = {
       nback_clear: { count: 0, locked: false },
       resource_clear: { count: 0, locked: false },
@@ -939,10 +989,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('btn-reset-iq').addEventListener('click', () => {
     gameState.nbackSequence = [];
+    gameState.resourceTarget = Math.floor(Math.random() * 13) + 8;
+    gameState.threatCodePuzzle = generateThreatCodePuzzle();
     gameState.challengeAttempts.nback_clear = { count: 0, locked: false };
     gameState.challengeAttempts.resource_clear = { count: 0, locked: false };
     gameState.challengeAttempts.logic_clear = { count: 0, locked: false };
     gameState.iqScore = 48;
+    playSfx('powerDown');
     updateBars();
     if (gameState.phase === 'iq') renderPhase();
   });
@@ -1080,6 +1133,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderObjectives();
   renderFinalScore();
   setPhase('briefing', { skipProtocolVoice: true });
+
+  const launchParams = new URLSearchParams(window.location.search);
+  if (launchParams.get('start') === 'home') {
+    launchProtocolOneFromHome();
+  }
 
   window.addEventListener('resize', () => {
     const nextAspect = window.innerWidth / window.innerHeight;
