@@ -174,5 +174,47 @@
       "text": "System stress escalating. I need calmer language to maintain cooperative processing.",
       "voice": "../src/audio/A7_stress_response_e.m4a"
     }
+  ],
+  "iq_success": [
+    {
+      "text": "Neural routing stabilized. Your executive control held under switching pressure.",
+      "voice": "../src/audio/A7_iq_success_a.m4a"
+    },
+    {
+      "text": "Protocol fidelity confirmed. You prioritized accuracy before speed\u2014sector integrity is rising.",
+      "voice": "../src/audio/A7_iq_success_b.m4a"
+    },
+    {
+      "text": "Cognitive relay complete. Working-memory gating and planning synchronization are online.",
+      "voice": "../src/audio/A7_iq_success_c.m4a"
+    }
+  ],
+  "eq_success": [
+    {
+      "text": "Affective load decreasing. Your response balanced validation with direction.",
+      "voice": "../src/audio/A7_eq_success_a.m4a"
+    },
+    {
+      "text": "Relational trust restored. I can process strategy without defensive spillover.",
+      "voice": "../src/audio/A7_eq_success_b.m4a"
+    },
+    {
+      "text": "Emotional coherence achieved. Continue with this regulate-then-coordinate cadence.",
+      "voice": "../src/audio/A7_eq_success_c.m4a"
+    }
+  ],
+  "eq_repair": [
+    {
+      "text": "Regulation drift detected. Reframe the threat and reconnect to shared goals.",
+      "voice": "../src/audio/A7_eq_repair_a.m4a"
+    },
+    {
+      "text": "Empathy signal was incomplete. Name emotion first, then propose one bounded step.",
+      "voice": "../src/audio/A7_eq_repair_b.m4a"
+    },
+    {
+      "text": "Social safety dropped. Retry with warmth plus concrete coordination.",
+      "voice": "../src/audio/A7_eq_repair_c.m4a"
+    }
   ]
 }
