@@ -190,6 +190,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '/mindweave/pages/academy.html';
   });
 
+  btnAcademy.addEventListener('click', () => {
+    window.location.href = '/mindweave/pages/iq.html';
+  });
+
+  btnAcademy.addEventListener('click', () => {
+    window.location.href = '/mindweave/pages/eq.html';
+  });
+
   document.getElementById('btn-exit').addEventListener('click', () => {
     window.location.href = '/index.html';
   });
