@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const apiKey = localStorage.getItem('mindweave_llm_api_key');
-  const responsesPath = '/mindweave/templates/responses.JSON';
+  const responsesPath = '/mindweave/templates/responses.json';
   const apiStatusEl = document.getElementById('api-status');
   const chatInput = document.getElementById('player-input');
   const sendBtn = document.getElementById('btn-send');
@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnHome = document.getElementById('btn-home');
   const btnSettings = document.getElementById('btn-settings');
   const btnNewGame = document.getElementById('btn-new-game');
+  const btnAcademy = document.getElementById('btn-academy');
   const settingsModal = document.getElementById('settings-modal');
   const settingsClose = document.getElementById('settings-close');
   const bgmVolumeInput = document.getElementById('bgm-volume');
@@ -27,6 +28,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sfxMuteInput = document.getElementById('sfx-mute');
   const voiceVolumeInput = document.getElementById('voice-volume');
   const voiceMuteInput = document.getElementById('voice-mute');
+  const endgameModal = document.getElementById('endgame-modal');
+  const endgameClose = document.getElementById('endgame-close');
+  const endgameRestart = document.getElementById('endgame-restart');
+  const endgameFinalScore = document.getElementById('endgame-final-score');
+  const endgameSummary = document.getElementById('endgame-summary');
 
   const iqValue = document.getElementById('iq-value');
   const iqBar = document.getElementById('iq-bar');
@@ -116,19 +122,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       nback_clear: { count: 0, locked: false },
       resource_clear: { count: 0, locked: false },
       logic_clear: { count: 0, locked: false },
+      iq_switch_clear: { count: 0, locked: false },
+      iq_planning_clear: { count: 0, locked: false },
       micro_clear: { count: 0, locked: false },
+      eq_reframe_clear: { count: 0, locked: false },
+      eq_boundary_clear: { count: 0, locked: false },
     },
     protocolScore: {
       iq: 0,
       eq: 0,
       debrief: 0,
     },
+    scoring: {
+      errors: 0,
+      lockedProtocols: 0,
+      chatSupports: 0,
+      completedRun: false,
+    },
   };
 
   const protocolWeights = {
-    iq: 45,
+    iq: 50,
     eq: 35,
-    debrief: 20,
+    debrief: 15,
   };
 
   const orderedPhases = ['briefing', 'iq', 'eq', 'debrief'];
@@ -139,8 +155,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     ['nback_clear', 'Pass dual n-back memory drill'],
     ['resource_clear', 'Stabilize resource routing'],
     ['logic_clear', 'Repair logic gate'],
+    ['iq_switch_clear', 'Complete task-switching relay'],
+    ['iq_planning_clear', 'Solve planning optimization drill'],
     ['iq_threatcode_clear', 'Resolve anomaly threat code'],
     ['micro_clear', 'Identify micro-expression'],
+    ['eq_reframe_clear', 'Apply cognitive reappraisal'],
+    ['eq_boundary_clear', 'Choose co-regulation boundary response'],
     ['eq_bridge_clear', 'Deliver active listening response'],
     ['regulation_clear', 'Reproduce Architect rhythm'],
     ['debrief_submit', 'Submit metacognitive debrief'],
@@ -164,6 +184,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnNewGame.addEventListener('click', () => {
     resetGameState();
+  });
+
+  btnAcademy.addEventListener('click', () => {
+    window.location.href = '/mindweave/pages/academy.html';
   });
 
   document.getElementById('btn-exit').addEventListener('click', () => {
@@ -426,8 +450,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function isPhaseComplete(phase) {
     if (phase === 'briefing') return gameState.completedObjectives.has('briefing_read') && gameState.completedObjectives.has('briefing_plan');
-    if (phase === 'iq') return gameState.completedObjectives.has('nback_clear') && gameState.completedObjectives.has('resource_clear') && gameState.completedObjectives.has('logic_clear') && gameState.completedObjectives.has('iq_threatcode_clear');
-    if (phase === 'eq') return gameState.completedObjectives.has('micro_clear') && gameState.completedObjectives.has('eq_bridge_clear') && gameState.completedObjectives.has('regulation_clear');
+    if (phase === 'iq') return gameState.completedObjectives.has('nback_clear') && gameState.completedObjectives.has('resource_clear') && gameState.completedObjectives.has('logic_clear') && gameState.completedObjectives.has('iq_switch_clear') && gameState.completedObjectives.has('iq_planning_clear') && gameState.completedObjectives.has('iq_threatcode_clear');
+    if (phase === 'eq') return gameState.completedObjectives.has('micro_clear') && gameState.completedObjectives.has('eq_reframe_clear') && gameState.completedObjectives.has('eq_boundary_clear') && gameState.completedObjectives.has('eq_bridge_clear') && gameState.completedObjectives.has('regulation_clear');
     if (phase === 'debrief') return gameState.completedObjectives.has('debrief_submit') && gameState.completedObjectives.has('debrief_commitment');
     return false;
   }
@@ -468,8 +492,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function calculateAttemptMultiplier(attemptCount) {
     if (attemptCount <= 1) return 1;
-    if (attemptCount === 2) return 0.65;
-    return 0.35;
+    if (attemptCount === 2) return 0.55;
+    return 0.2;
   }
 
   function registerChallengeAttempt(challengeId, onSuccess, onFailure) {
@@ -483,6 +507,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (challenge.count >= 3) {
+      gameState.scoring.errors += 1;
       appendChat('SYSTEM', 'Maximum attempts reached for this protocol.', 'text-yellow-400');
       playSfx('error');
       return false;
@@ -496,8 +521,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       return true;
     }
 
+    gameState.scoring.errors += 1;
     if (attemptCount >= 3) {
       challenge.locked = true;
+      gameState.scoring.lockedProtocols += 1;
       appendChat('SYSTEM', 'Protocol locked after 3 attempts.', 'text-yellow-400');
       playSfx('error');
     } else if (onFailure) {
@@ -514,8 +541,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderFinalScore();
   }
 
+  function calculateFinalScore() {
+    const rawScore = gameState.protocolScore.iq + gameState.protocolScore.eq + gameState.protocolScore.debrief;
+    const unresolved = objectiveDefinitions.length - gameState.completedObjectives.size;
+    const penalties = (gameState.scoring.errors * 2) + (gameState.scoring.lockedProtocols * 5) + unresolved;
+    return {
+      rawScore,
+      penalties,
+      totalScore: Math.max(0, Math.min(100, rawScore - penalties)),
+    };
+  }
+
+  function maybeShowEndgameModal() {
+    if (gameState.scoring.completedRun || !isPhaseComplete('debrief')) return;
+    const score = calculateFinalScore();
+    gameState.scoring.completedRun = true;
+    endgameFinalScore.textContent = `${score.totalScore} / 100`;
+    endgameSummary.innerHTML = [
+      `<div>Raw protocol score: ${score.rawScore}/100</div>`,
+      `<div>Penalties applied: -${score.penalties}</div>`,
+      `<div>Errors logged: ${gameState.scoring.errors}</div>`,
+      `<div>Locked protocols: ${gameState.scoring.lockedProtocols}</div>`,
+      `<div>Objectives completed: ${gameState.completedObjectives.size}/${objectiveDefinitions.length}</div>`,
+    ].join('');
+    endgameModal.classList.remove('hidden');
+    endgameModal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeEndgameModal() {
+    endgameModal.classList.add('hidden');
+    endgameModal.setAttribute('aria-hidden', 'true');
+  }
+
   function renderFinalScore() {
-    const totalScore = gameState.protocolScore.iq + gameState.protocolScore.eq + gameState.protocolScore.debrief;
+    const { totalScore } = calculateFinalScore();
     finalScoreEl.textContent = `${totalScore} / 100`;
     if (totalScore >= 85 && !hasPlayedAchieveCue) {
       hasPlayedAchieveCue = true;
@@ -690,6 +749,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             <button id="logic-submit" class="mindweave-action ml-2">Commit</button>
           </div>
           <div class="mindweave-card">
+            <strong>Task-Switching Relay</strong>
+            <p>Rule A (blue lane): if number is odd add 3, if even double it. For input <span class="text-cyan-300 font-bold">7</span>, transmit output.</p>
+            <input id="switch-input" class="mindweave-input w-24" type="number" />
+            <button id="switch-submit" class="mindweave-action ml-2">Transmit</button>
+          </div>
+          <div class="mindweave-card">
+            <strong>Planning Optimization</strong>
+            <p>You can stabilize only two districts this cycle: Habitat (+6), Transit (+4), MedGrid (+7), WaterNet (+5). Target gain is <span class="text-cyan-300 font-bold">11</span>. Choose the correct pair.</p>
+            <select id="planning-choice" class="mindweave-input">
+              <option value="">Select pair...</option>
+              <option value="habitat-transit">Habitat + Transit</option>
+              <option value="transit-water">Transit + WaterNet</option>
+              <option value="transit-med">Transit + MedGrid</option>
+              <option value="med-water">MedGrid + WaterNet</option>
+            </select>
+            <button id="planning-submit" class="mindweave-action ml-2">Commit Plan</button>
+          </div>
+          <div class="mindweave-card">
             <strong>Anomaly Threat Code</strong>
             <p>${gameState.threatCodePuzzle.prompt}</p>
             <input id="threatcode-input" class="mindweave-input w-24" type="number" />
@@ -769,6 +846,52 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
       };
 
+      document.getElementById('switch-submit').onclick = () => {
+        const output = Number(document.getElementById('switch-input').value);
+        registerChallengeAttempt(
+          'iq_switch_clear',
+          (attemptCount) => {
+            if (output !== 10) return false;
+            gameState.iqScore = Math.min(100, gameState.iqScore + 8);
+            awardProtocolScore('iq', 8, attemptCount);
+            markObjective('iq_switch_clear', 'Task-switching relay stabilized');
+            { const r = pickResponse('iq_success', 'Cognitive flexibility relay cleared.', null); appendChat('SYSTEM', r.text, 'text-emerald-400'); }
+            playSfx('correct');
+            updateBars();
+            return true;
+          },
+          () => {
+            gameState.iqScore = Math.max(0, gameState.iqScore - 5);
+            appendChat('SYSTEM', 'Switching rule drift detected. Re-evaluate Rule A.', 'text-yellow-400');
+            playSfx('wrong');
+            updateBars();
+          }
+        );
+      };
+
+      document.getElementById('planning-submit').onclick = () => {
+        const choice = document.getElementById('planning-choice').value;
+        registerChallengeAttempt(
+          'iq_planning_clear',
+          (attemptCount) => {
+            if (choice !== 'transit-med') return false;
+            gameState.iqScore = Math.min(100, gameState.iqScore + 8);
+            awardProtocolScore('iq', 8, attemptCount);
+            markObjective('iq_planning_clear', 'Planning optimization complete');
+            { const r = pickResponse('iq_success', 'Executive planning alignment confirmed.', null); appendChat('SYSTEM', r.text, 'text-emerald-400'); }
+            playSfx('correct');
+            updateBars();
+            return true;
+          },
+          () => {
+            gameState.iqScore = Math.max(0, gameState.iqScore - 5);
+            appendChat('SYSTEM', 'Planning objective not met. Target gain remains 11.', 'text-yellow-400');
+            playSfx('wrong');
+            updateBars();
+          }
+        );
+      };
+
       document.getElementById('threatcode-submit').onclick = () => {
         const code = Number(document.getElementById('threatcode-input').value);
         if (code !== gameState.threatCodePuzzle.answer) {
@@ -797,6 +920,28 @@ document.addEventListener('DOMContentLoaded', async () => {
             <p>NPC profile: brow raise + lip press + avert gaze. Best emotional interpretation?</p>
             <select id="micro-choice" class="mindweave-input"><option value="fear">Fear / uncertainty</option><option value="joy">Joy</option><option value="disgust">Disgust</option></select>
             <button id="micro-submit" class="mindweave-action ml-2">Analyze</button>
+          </div>
+          <div class="mindweave-card">
+            <strong>Cognitive Reappraisal</strong>
+            <p>Architect-7 says: "If we fail this district, every citizen will turn against us." Select the best regulation response.</p>
+            <select id="reframe-choice" class="mindweave-input">
+              <option value="">Choose response...</option>
+              <option value="catastrophe">"You're right, everything is doomed."</option>
+              <option value="reframe">"Let's narrow scope: one district is at risk, but we can still recover by sequencing priorities."</option>
+              <option value="dismiss">"Stop overreacting and execute."</option>
+            </select>
+            <button id="reframe-submit" class="mindweave-action mt-2">Apply Reframe</button>
+          </div>
+          <div class="mindweave-card">
+            <strong>Co-Regulation Boundary</strong>
+            <p>Select the statement that balances empathy + direction.</p>
+            <select id="boundary-choice" class="mindweave-input">
+              <option value="">Choose statement...</option>
+              <option value="hard">"Feelings are irrelevant. Follow orders."</option>
+              <option value="balanced">"I hear the load you're carrying; let's take a 20-second reset, then commit to one actionable next step."</option>
+              <option value="avoid">"We'll decide later, let's postpone."</option>
+            </select>
+            <button id="boundary-submit" class="mindweave-action mt-2">Lock Statement</button>
           </div>
           <div class="mindweave-card">
             <strong>Empathy Bridge</strong>
@@ -835,9 +980,55 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
       };
 
+      document.getElementById('reframe-submit').onclick = () => {
+        const value = document.getElementById('reframe-choice').value;
+        registerChallengeAttempt(
+          'eq_reframe_clear',
+          (attemptCount) => {
+            if (value !== 'reframe') return false;
+            gameState.eqScore = Math.min(100, gameState.eqScore + 7);
+            awardProtocolScore('eq', 7, attemptCount);
+            markObjective('eq_reframe_clear', 'Cognitive reappraisal executed');
+            { const r = pickResponse('eq_success', 'Threat load reduced. Reframing restored my planning bandwidth.', null); appendChat('Architect-7', r.text, 'text-white'); }
+            playSfx('correct');
+            updateBars();
+            return true;
+          },
+          () => {
+            gameState.eqScore = Math.max(0, gameState.eqScore - 6);
+            { const r = pickResponse('eq_repair', 'Reappraisal failed. Catastrophic framing remains active.', null); appendChat('SYSTEM', r.text, 'text-yellow-400'); }
+            playSfx('wrong');
+            updateBars();
+          }
+        );
+      };
+
+      document.getElementById('boundary-submit').onclick = () => {
+        const value = document.getElementById('boundary-choice').value;
+        registerChallengeAttempt(
+          'eq_boundary_clear',
+          (attemptCount) => {
+            if (value !== 'balanced') return false;
+            gameState.eqScore = Math.min(100, gameState.eqScore + 7);
+            awardProtocolScore('eq', 8, attemptCount);
+            markObjective('eq_boundary_clear', 'Co-regulation boundary aligned');
+            { const r = pickResponse('eq_success', 'Boundary accepted. I can regulate and execute simultaneously.', null); appendChat('Architect-7', r.text, 'text-white'); }
+            playSfx('correct');
+            updateBars();
+            return true;
+          },
+          () => {
+            gameState.eqScore = Math.max(0, gameState.eqScore - 6);
+            { const r = pickResponse('eq_repair', 'Boundary response was either avoidant or coercive. Retry.', null); appendChat('SYSTEM', r.text, 'text-yellow-400'); }
+            playSfx('wrong');
+            updateBars();
+          }
+        );
+      };
+
       document.getElementById('eq-bridge-submit').onclick = () => {
-        if (!/understand|hear|support|calm|together/i.test(chatHistory.textContent)) {
-          appendChat('SYSTEM', 'Use chat to send at least one active-listening response first.', 'text-yellow-400');
+        if (gameState.scoring.chatSupports < 2) {
+          appendChat('SYSTEM', 'Use chat to send at least two active-listening responses first.', 'text-yellow-400');
           playSfx('error');
           return;
         }
@@ -891,10 +1082,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         markObjective('debrief_submit', 'Debrief submitted');
         markObjective('debrief_commitment', 'Transfer commitments logged');
-        gameState.protocolScore.debrief = protocolWeights.debrief;
+        const strategyTerms = /(strategy|plan|sequence|prioritize|check|adapt|monitor)/i.test(reflection);
+        const transferTerms = /(team|work|meeting|conflict|project|real-world|colleague)/i.test(reflection);
+        const adaptationTerms = /(adapt|switch|adjust|reframe|changed|correct)/i.test(reflection);
+        const qualityBonus = [strategyTerms, transferTerms, adaptationTerms].filter(Boolean).length;
+        const lengthBand = reflection.length >= 220 ? 6 : reflection.length >= 140 ? 4 : 2;
+        gameState.protocolScore.debrief = Math.min(protocolWeights.debrief, 5 + qualityBonus + lengthBand);
         renderFinalScore();
         await sendTaskMessage(`Debrief reflection: ${reflection}`, 'debrief_reflection');
         appendChat('SYSTEM', 'Campaign loop complete. Far-transfer reinforcement logged.', 'text-emerald-400');
+        maybeShowEndgameModal();
       };
     }
 
@@ -915,7 +1112,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       nback_clear: { count: 0, locked: false },
       resource_clear: { count: 0, locked: false },
       logic_clear: { count: 0, locked: false },
+      iq_switch_clear: { count: 0, locked: false },
+      iq_planning_clear: { count: 0, locked: false },
       micro_clear: { count: 0, locked: false },
+      eq_reframe_clear: { count: 0, locked: false },
+      eq_boundary_clear: { count: 0, locked: false },
     };
     gameState.pulseSequence = {
       targetBpm: null,
@@ -927,8 +1128,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       active: false,
     };
     gameState.protocolScore = { iq: 0, eq: 0, debrief: 0 };
+    gameState.scoring = { errors: 0, lockedProtocols: 0, chatSupports: 0, completedRun: false };
 
-
+    closeEndgameModal();
     chatHistory.innerHTML = '';
     { const introReset = pickResponse('intro', 'Session reboot acknowledged. We restart from Campaign Protocol 1: Mission Briefing.', audioLibrary.voice.briefing); appendChat('Architect-7', introReset.text, 'text-white', introReset.voice); }
     updateNPCState('neutral', 'Session reset and synchronized');
@@ -964,8 +1166,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateNPCState('thinking', 'Processing Semantics...');
     await sendTaskMessage(text, gameState.phase === 'debrief' ? 'debrief_reflection' : 'npc_dialogue');
 
-    if (gameState.phase === 'eq' && /understand|hear|support|calm|together/i.test(text)) {
-      gameState.eqScore = Math.min(100, gameState.eqScore + 5);
+    if (gameState.phase === 'eq' && /understand|hear|support|calm|together|validate|breathe|reset/i.test(text)) {
+      gameState.scoring.chatSupports += 1;
+      gameState.eqScore = Math.min(100, gameState.eqScore + 3);
       updateBars();
       if (gameState.completedObjectives.has('micro_clear') && gameState.completedObjectives.has('regulation_clear') && gameState.completedObjectives.has('eq_bridge_clear')) {
         setPhase('debrief');
@@ -994,6 +1197,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     gameState.challengeAttempts.nback_clear = { count: 0, locked: false };
     gameState.challengeAttempts.resource_clear = { count: 0, locked: false };
     gameState.challengeAttempts.logic_clear = { count: 0, locked: false };
+    gameState.challengeAttempts.iq_switch_clear = { count: 0, locked: false };
+    gameState.challengeAttempts.iq_planning_clear = { count: 0, locked: false };
     gameState.iqScore = 48;
     playSfx('powerDown');
     updateBars();
@@ -1051,6 +1256,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   settingsClose.addEventListener('click', closeSettings);
+  endgameClose.addEventListener('click', closeEndgameModal);
+  endgameRestart.addEventListener('click', () => {
+    closeEndgameModal();
+    resetGameState();
+  });
+  endgameModal.addEventListener('click', (event) => {
+    if (event.target === endgameModal) closeEndgameModal();
+  });
   settingsModal.addEventListener('click', (event) => {
     if (event.target === settingsModal) closeSettings();
   });
