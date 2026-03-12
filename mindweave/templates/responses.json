@@ -175,6 +175,24 @@
       "voice": "../src/audio/A7_stress_response_e.m4a"
     }
   ],
+  "failed_attempt": [
+    {
+      "text": "Multiple attempts detected. Weaver Academy can sharpen your approach before the next protocol cycle.",
+      "voice": "../src/audio/A7_failed_attempts_a.m4a"
+    },
+    {
+      "text": "Multiple attempts have been logged. Weaver Academy is available to refine your methodology prior to the next protocol cycle.",
+      "voice": "../src/audio/A7_failed_attempts_b.m4a"
+    },
+    {
+      "text": "Looks like you've made a few tries. Let Weaver Academy help you polish your skills before the next round.",
+      "voice": "../src/audio/A7_failed_attempts_c.m4a"
+    },
+    {
+      "text": "Several attempts noted. Hone your edge with Weaver Academy before the next protocol cycle begins.",
+      "voice": "../src/audio/A7_failed_attempts_d.m4a"
+    }
+  ],
   "iq_success": [
     {
       "text": "Neural routing stabilized. Your executive control held under switching pressure.",
