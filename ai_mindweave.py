@@ -383,6 +383,21 @@ class MindweaveAI:
         self.shared_memory.set("mindweave:last_learning_event", route_result)
         return True
 
+    def _build_coaching_hint(self, message: str, telemetry: dict[str, Any], task_type: str) -> str | None:
+        lower_text = message.lower()
+        phase = str(telemetry.get("phase", "")).lower()
+        if task_type == "debrief_reflection":
+            return "Language Agent: Include (1) your strategy, (2) one adaptation moment, and (3) where you will use it in real teamwork."
+        if any(token in lower_text for token in ("stuck", "confused", "hard", "help", "dont get", "don't get")):
+            return "Language Agent: Try this loop: restate the target, eliminate one wrong option, then test one answer before you commit."
+        if any(token in lower_text for token in ("stress", "anxious", "panic", "overwhelm", "frustrat")):
+            return "Language Agent: Regulate first—one slow breath, name the pressure, then issue one calm and specific instruction."
+        if phase == "eq":
+            return "Language Agent: In EQ mode, use validation + boundary + next step. Example: 'I hear the load; let's stabilize one subsystem now.'"
+        if phase == "iq":
+            return "Language Agent: In IQ mode, prioritize sequence accuracy over speed, and verbally check the rule before submitting."
+        return None
+
     def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
         message = str(payload.get("message", "")).strip()
         if not message:
@@ -403,9 +418,11 @@ class MindweaveAI:
 
         lower_text = message.lower()
         task_type = event.get("task_type", "npc_dialogue")
+        telemetry = event.get("telemetry", {}) if isinstance(event.get("telemetry"), dict) else {}
+        coaching_hint = self._build_coaching_hint(message, telemetry, task_type)
 
         if task_type == "debrief_reflection":
-            if any(token in lower_text for token in ("strategy", "reflect", "transfer", "real-world", "collaboration")):
+            if any(token in lower_text for token in ("strategy", "reflect", "transfer", "real-world", "collaboration", "adapt")):
                 response, voice = self._pick_response(
                     "debrief",
                     "Debrief accepted. You demonstrated metacognitive transfer and emotional regulation insight.",
@@ -426,7 +443,7 @@ class MindweaveAI:
                 "../src/audio/A7_thinking_respose.m4a",
             )
             emotion, analysis, eq_delta = "thinking", "Executive Processing", 1
-        elif any(token in lower_text for token in ("understand", "help", "calm", "support", "hear", "hi", "hello", "architect")):
+        elif any(token in lower_text for token in ("understand", "help", "calm", "support", "hear", "hi", "hello", "architect", "plan", "strategy")):
             planned_dialogue = self._execute_planning({**event, "task_type": "npc_dialogue", "command": "create_plan"})
             fallback_response, voice = self._pick_response(
                 "calm",
@@ -437,7 +454,7 @@ class MindweaveAI:
             if isinstance(planned_dialogue, dict):
                 plan_steps = planned_dialogue.get("plan_steps")
                 if isinstance(plan_steps, int):
-                    response = f"{response} (planning ready: {plan_steps} step(s))"
+                    response = f"{response} [AI planner staged: {plan_steps} step(s)]"
             emotion, analysis, eq_delta = "calm", "Architect Bridge / Engaged", 5
         elif any(token in lower_text for token in ("hurry", "now", "fix")):
             response, voice = self._pick_response(
@@ -461,6 +478,7 @@ class MindweaveAI:
             "analysis": analysis,
             "eq_delta": eq_delta,
             "voice": voice,
+            "coaching_hint": coaching_hint,
             "route": route_result,
         }
 
