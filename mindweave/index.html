@@ -50,6 +50,9 @@
               <div class="flex justify-between text-[10px] text-slate-400 uppercase tracking-widest mb-1"><span>Mission Completion</span><span id="progress-value">0%</span></div>
               <div class="w-full bg-black/50 h-1.5 rounded-full overflow-hidden"><div id="progress-bar" class="bg-emerald-400 h-full w-0 transition-all duration-500"></div></div>
             </div>
+            <button id="btn-academy" class="w-full mt-3 px-3 py-2 rounded-lg border border-cyan-300/30 bg-cyan-500/10 text-[10px] font-mono uppercase tracking-[0.2em] text-cyan-200 hover:bg-cyan-500/20 transition-colors">
+              Weaver Academy
+            </button>
           </div>
         </div>
 
@@ -109,6 +112,10 @@
               <p id="final-score" class="text-lg font-bold text-emerald-300">0 / 100</p>
               <div id="protocol-score-list" class="text-[11px] font-mono text-slate-400 space-y-1"></div>
             </div>
+            <div class="mt-2 space-y-2">
+              <button id="btn-iq-test" class="protocol-btn" disabled>IQ Test <span class="text-slate-500">[locked]</span></button>
+              <button id="btn-eq-test" class="protocol-btn" disabled>EQ Test <span class="text-slate-500">[locked]</span></button>
+            </div>
           </div>
           <div class="text-[9px] text-slate-500 uppercase tracking-widest text-center mt-auto">
             Project MindWeave v1.1.0<br>Full Training Loop Enabled
@@ -152,6 +159,22 @@
           </div>
           <input id="voice-volume" type="range" min="0" max="1" step="0.01" value="1" class="w-full mt-2" />
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="endgame-modal" class="settings-modal hidden" aria-hidden="true">
+    <div class="settings-card glass-panel">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-mono uppercase tracking-widest text-emerald-200">Campaign Complete</h3>
+        <button id="endgame-close" class="settings-close-btn" type="button">✕</button>
+      </div>
+      <div class="mindweave-card text-xs space-y-3">
+        <p class="text-slate-300">Final score: <span id="endgame-final-score" class="text-emerald-300 font-bold">0 / 100</span></p>
+        <div id="endgame-summary" class="text-slate-300 space-y-1"></div>
+      </div>
+      <div class="mt-3 flex gap-2 justify-end">
+        <button id="endgame-restart" class="mindweave-action" type="button">Run New Campaign</button>
       </div>
     </div>
   </div>
