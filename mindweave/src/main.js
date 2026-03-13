@@ -20,6 +20,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnSettings = document.getElementById('btn-settings');
   const btnNewGame = document.getElementById('btn-new-game');
   const btnAcademy = document.getElementById('btn-academy');
+  const btnIqTest = document.getElementById('btn-iq-test');
+  const btnEqTest = document.getElementById('btn-eq-test');
   const settingsModal = document.getElementById('settings-modal');
   const settingsClose = document.getElementById('settings-close');
   const bgmVolumeInput = document.getElementById('bgm-volume');
@@ -97,6 +99,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   let hasPlayedStartupBriefing = false;
 
   let hasPlayedAchieveCue = false;
+
+  const aiCoachState = {
+    lastHintAt: 0,
+  };
 
   const gameState = {
     phase: 'briefing',
@@ -190,11 +196,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '/mindweave/pages/academy.html';
   });
 
-  btnAcademy.addEventListener('click', () => {
+  btnIqTest.addEventListener('click', () => {
+    if (btnIqTest.disabled) return;
     window.location.href = '/mindweave/pages/iq.html';
   });
 
-  btnAcademy.addEventListener('click', () => {
+  btnEqTest.addEventListener('click', () => {
+    if (btnEqTest.disabled) return;
     window.location.href = '/mindweave/pages/eq.html';
   });
 
@@ -483,6 +491,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  function updateAdvancedAccessButtons() {
+    const { totalScore } = calculateFinalScore();
+    const unlocked = totalScore > 84;
+    btnIqTest.disabled = !unlocked;
+    btnEqTest.disabled = !unlocked;
+    btnIqTest.innerHTML = unlocked ? 'IQ Test <span class="text-emerald-400">[ready]</span>' : 'IQ Test <span class="text-slate-500">[locked]</span>';
+    btnEqTest.innerHTML = unlocked ? 'EQ Test <span class="text-emerald-400">[ready]</span>' : 'EQ Test <span class="text-slate-500">[locked]</span>';
+  }
+
+  async function blinkAcademyButton(times = 3) {
+    for (let i = 0; i < times; i += 1) {
+      btnAcademy.classList.add('academy-attention-blink');
+      await new Promise((resolve) => setTimeout(resolve, 220));
+      btnAcademy.classList.remove('academy-attention-blink');
+      if (i < times - 1) await new Promise((resolve) => setTimeout(resolve, 140));
+    }
+  }
+
+  async function suggestAcademy(message, tone = 'recommend') {
+    const prefix = tone === 'urgent' ? 'SYSTEM' : 'Architect-7';
+    const color = tone === 'urgent' ? 'text-amber-300' : 'text-cyan-200';
+    appendChat(prefix, message, color);
+    await blinkAcademyButton(3);
+  }
+
+  function getAiCoachHint(message) {
+    const text = message.toLowerCase();
+    if (/(stuck|confus|hard|don't get|dont get|help)/.test(text)) {
+      return 'Language Agent: Run a 3-step loop — (1) restate the goal, (2) write one rule, (3) test one candidate answer before committing.';
+    }
+    if (/(anxious|panic|stres|overwhelm|frustrat)/.test(text)) {
+      return 'Language Agent: Name the pressure in one sentence, take one breath cycle, then send Architect-7 a calm directive with one concrete next step.';
+    }
+    if (/(plan|strategy|next|what should i do|guide)/.test(text)) {
+      return 'Language Agent: Suggested plan — Scan objective text, eliminate one wrong option, then commit only after a quick self-check.';
+    }
+    return null;
+  }
+
   function updateNPCState(emotion, textIndicator) {
     currentEmotion = emotion;
     emotionIndicator.textContent = `Analysis: ${textIndicator}`;
@@ -504,7 +551,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return 0.2;
   }
 
-  function registerChallengeAttempt(challengeId, onSuccess, onFailure) {
+  function registerChallengeAttempt(challengeId, onSuccess, onFailure, options = {}) {
     const challenge = gameState.challengeAttempts[challengeId];
     if (!challenge) return false;
 
@@ -534,6 +581,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       challenge.locked = true;
       gameState.scoring.lockedProtocols += 1;
       appendChat('SYSTEM', 'Protocol locked after 3 attempts.', 'text-yellow-400');
+      if (!options.skipAcademyPromptOnLock) {
+        suggestAcademy('Multiple attempts detected. Weaver Academy can sharpen your approach before the next protocol cycle.', 'urgent'); // pull from resposes.json under failed attempts
+      }
       playSfx('error');
     } else if (onFailure) {
       onFailure(attemptCount);
@@ -590,6 +640,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (totalScore < 85) {
       hasPlayedAchieveCue = false;
     }
+    updateAdvancedAccessButtons();
     protocolScoreListEl.innerHTML = [
       `IQ Protocol: ${gameState.protocolScore.iq}/${protocolWeights.iq}`,
       `EQ Protocol: ${gameState.protocolScore.eq}/${protocolWeights.eq}`,
@@ -627,7 +678,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           player_id: 'weaver',
           message,
           task_type: taskType,
-          telemetry: { phase: gameState.phase, iq: gameState.iqScore, eq: gameState.eqScore, timestamp: Date.now() }
+          telemetry: { phase: gameState.phase, iq: gameState.iqScore, eq: gameState.eqScore, progress: gameState.progress, chat_supports: gameState.scoring.chatSupports, objectives_completed: gameState.completedObjectives.size, timestamp: Date.now() }
         })
       });
       const payload = await response.json().catch(() => ({}));
@@ -636,11 +687,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       gameState.eqScore = Math.max(0, Math.min(100, gameState.eqScore + Number(payload.eq_delta || 0)));
       updateBars();
       const reply = payload.reply || 'No response generated.';
+      const coachingCue = payload.coaching_hint || payload.agent_hint;
       const normalizedReply = reply.toLowerCase();
       let replyVoice = payload.voice || audioLibrary.voice.calmResponse;
       if (normalizedReply.includes('ambiguous')) replyVoice = payload.voice || audioLibrary.voice.ambiguousResponse;
       if (normalizedReply.includes('stress') || normalizedReply.includes('unstable')) replyVoice = payload.voice || audioLibrary.voice.stressResponse;
       appendChat('Architect-7', reply, 'text-white', replyVoice);
+      if (coachingCue) {
+        appendChat('Language Agent', coachingCue, 'text-violet-200');
+      }
       playSfx('correct');
     } catch (error) {
       appendChat('SYSTEM', `Backend sync failed: ${error.message}`, 'text-red-500');
@@ -714,7 +769,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         markObjective('briefing_plan', 'Stabilization sequence confirmed');
         markObjective('briefing_read', 'Briefing acknowledged');
         { const ack = pickResponse('briefing', 'Acknowledged. Mission brief locked.', audioLibrary.voice.briefingAcknowledge); appendChat('Architect-7', ack.text, 'text-white', ack.voice); }
-        await enqueueVoice(audioLibrary.voice.briefingAcknowledge, { priority: voicePriority.sequence, clearQueue: true, interrupt: true, delayMs: 500 });
+        await suggestAcademy('Before Protocol 1 intensifies, Weaver Academy can give you a fast calibration pass on mission skills.', 'recommend'); // match this with audio recommend.m4a
         setPhase('iq', { skipProtocolVoice: true });
         enqueueVoice(audioLibrary.voice.protocol1, { priority: voicePriority.sequence });
       };
