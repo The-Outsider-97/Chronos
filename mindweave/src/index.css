@@ -161,3 +161,9 @@ body {
     max-height: 50vh;
   }
 }
+
+.academy-attention-blink {
+  border-color: rgba(56, 189, 248, 0.95) !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2), 0 0 14px rgba(56, 189, 248, 0.7);
+  background: rgba(56, 189, 248, 0.2) !important;
+}
