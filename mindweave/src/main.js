@@ -96,7 +96,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const voiceQueue = [];
   let activeVoiceJob = null;
-  let hasPlayedStartupBriefing = false;
 
   let hasPlayedAchieveCue = false;
 
@@ -172,7 +171,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     ['debrief_submit', 'Submit metacognitive debrief'],
     ['debrief_commitment', 'Define two transfer commitments'],
   ];
-
 
   apiStatusEl.textContent = apiKey ? 'Uplink Secure. AI Backend + Key Active.' : 'Uplink Secure. AI Backend Active (no external key).';
   apiStatusEl.classList.replace('text-yellow-400', 'text-green-400');
@@ -509,10 +507,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  async function suggestAcademy(message, tone = 'recommend') {
+  async function suggestAcademy(templateGroupOrMessage, tone = 'recommend') {
+    let message, voice;
+    if (typeof templateGroupOrMessage === 'string' && responseTemplates && responseTemplates[templateGroupOrMessage]) {
+      const response = pickResponse(templateGroupOrMessage, 'Weaver Academy can help.', null);
+      message = response.text;
+      voice = response.voice;
+    } else {
+      message = templateGroupOrMessage;
+      voice = null;
+    }
     const prefix = tone === 'urgent' ? 'SYSTEM' : 'Architect-7';
     const color = tone === 'urgent' ? 'text-amber-300' : 'text-cyan-200';
     appendChat(prefix, message, color);
+    if (voice) {
+      enqueueVoice(voice, { priority: voicePriority.sequence });
+    }
     await blinkAcademyButton(3);
   }
 
@@ -582,7 +592,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       gameState.scoring.lockedProtocols += 1;
       appendChat('SYSTEM', 'Protocol locked after 3 attempts.', 'text-yellow-400');
       if (!options.skipAcademyPromptOnLock) {
-        suggestAcademy('Multiple attempts detected. Weaver Academy can sharpen your approach before the next protocol cycle.', 'urgent'); // pull from resposes.json under failed attempts
+        suggestAcademy('failed_attempt', 'urgent');
       }
       playSfx('error');
     } else if (onFailure) {
@@ -734,6 +744,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     appendChat('SYSTEM', 'Home launch synchronized. Awaiting briefing confirmation for Protocol 1.', 'text-slate-400');
   }
 
+  async function playStartupSequence() {
+    // Clear any ongoing audio
+    voiceQueue.length = 0;
+    if (activeVoiceJob?.audio) {
+      activeVoiceJob.audio.pause();
+      activeVoiceJob.audio.currentTime = 0;
+      activeVoiceJob = null;
+    }
+
+    // 1s pause
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Intro
+    const intro = pickResponse('intro', 'Weaver, the socio-cognitive lattice is collapsing.', audioLibrary.voice.briefing);
+    appendChat('Architect-7', intro.text, 'text-white');
+    await enqueueVoice(intro.voice, { priority: voicePriority.protocol });
+
+    // 0.5s pause
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Academy recommendation
+    const recommendText = "Before Protocol 1 intensifies, Weaver Academy can give you a fast calibration pass on mission skills.";
+    const recommendVoice = "../src/audio/A7_recommend.m4a";
+    appendChat('Language Agent', recommendText, 'text-violet-200');
+    await enqueueVoice(recommendVoice, { priority: voicePriority.sequence });
+
+    // Blink Academy button
+    await blinkAcademyButton(3);
+
+    // 1s pause
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Protocol 1 voice (briefing)
+    const briefing = pickResponse('briefing', 'Campaign Protocol 1 engaged.', audioLibrary.voice.protocol1);
+    enqueueVoice(briefing.voice, { priority: voicePriority.protocol });
+
+    // Set phase briefing without double voice
+    setPhase('briefing', { skipProtocolVoice: true });
+  }
+
+  function startProtocol1() {
+    // Clear queue and interrupt current audio
+    voiceQueue.length = 0;
+    if (activeVoiceJob?.audio) {
+      activeVoiceJob.audio.pause();
+      activeVoiceJob.audio.currentTime = 0;
+      activeVoiceJob = null;
+    }
+    // Set briefing phase (will append a briefing message)
+    setPhase('briefing', { skipProtocolVoice: true });
+    // Enqueue briefing voice
+    const briefing = pickResponse('briefing', 'Campaign Protocol 1 engaged.', audioLibrary.voice.protocol1);
+    enqueueVoice(briefing.voice, { priority: voicePriority.protocol });
+  }
+
   function renderPhase() {
     phaseButtons.forEach((btn) => btn.classList.toggle('phase-active', btn.dataset.phase === gameState.phase));
     updatePhaseButtonStates();
@@ -769,7 +834,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         markObjective('briefing_plan', 'Stabilization sequence confirmed');
         markObjective('briefing_read', 'Briefing acknowledged');
         { const ack = pickResponse('briefing', 'Acknowledged. Mission brief locked.', audioLibrary.voice.briefingAcknowledge); appendChat('Architect-7', ack.text, 'text-white', ack.voice); }
-        await suggestAcademy('Before Protocol 1 intensifies, Weaver Academy can give you a fast calibration pass on mission skills.', 'recommend'); // match this with audio recommend.m4a
+        // Removed duplicate Academy suggestion here
         setPhase('iq', { skipProtocolVoice: true });
         enqueueVoice(audioLibrary.voice.protocol1, { priority: voicePriority.sequence });
       };
@@ -1185,11 +1250,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     closeEndgameModal();
     chatHistory.innerHTML = '';
-    { const introReset = pickResponse('intro', 'Session reboot acknowledged. We restart from Campaign Protocol 1: Mission Briefing.', audioLibrary.voice.briefing); appendChat('Architect-7', introReset.text, 'text-white', introReset.voice); }
     updateNPCState('neutral', 'Session reset and synchronized');
     updateBars();
     renderObjectives();
-    setPhase('briefing');
+    startProtocol1();
   }
 
   function setPhase(phase, options = {}) {
@@ -1389,22 +1453,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     apiStatusEl.classList.replace('text-green-400', 'text-red-500');
   });
 
-  const intro = pickResponse('intro', 'Weaver, the socio-cognitive lattice is collapsing. Begin with mission briefing and restore balance.', audioLibrary.voice.briefing);
-  appendChat('Architect-7', intro.text, 'text-white');
-  if (!hasPlayedStartupBriefing) {
-    hasPlayedStartupBriefing = true;
-    await enqueueVoice(intro.voice || audioLibrary.voice.briefing, {
-      priority: voicePriority.protocol,
-      clearQueue: true,
-      interrupt: true,
-      delayMs: 1000,
-    });
-    enqueueVoice(audioLibrary.voice.protocol1, { priority: voicePriority.sequence });
-  }
+  // Always play the full startup sequence on every page load
+  await playStartupSequence();
+
   updateBars();
   renderObjectives();
   renderFinalScore();
-  setPhase('briefing', { skipProtocolVoice: true });
 
   const launchParams = new URLSearchParams(window.location.search);
   if (launchParams.get('start') === 'home') {
