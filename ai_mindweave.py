@@ -45,6 +45,7 @@ import json
 import math
 import random
 import threading
+import requests
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from dataclasses import dataclass, field
@@ -383,6 +384,77 @@ class MindweaveAI:
         self.shared_memory.set("mindweave:last_learning_event", route_result)
         return True
 
+    def _infer_provider_from_api_key(self, api_key: str) -> str:
+        key = api_key.strip()
+        if key.startswith("sk-ant-"):
+            return "anthropic"
+        return "openai"
+
+    def _generate_external_llm_reply(self, api_key: str, message: str, event: dict[str, Any]) -> tuple[str | None, str | None]:
+        key = (api_key or "").strip()
+        if not key:
+            return None, None
+
+        provider = self._infer_provider_from_api_key(key)
+        timeout_seconds = float(os.getenv("MINDWEAVE_LLM_TIMEOUT", "20"))
+
+        try:
+            if provider == "anthropic":
+                model = os.getenv("MINDWEAVE_ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+                response = requests.post(
+                    os.getenv("MINDWEAVE_ANTHROPIC_CHAT_URL", "https://api.anthropic.com/v1/messages"),
+                    headers={
+                        "x-api-key": key,
+                        "anthropic-version": os.getenv("MINDWEAVE_ANTHROPIC_VERSION", "2023-06-01"),
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "max_tokens": int(os.getenv("MINDWEAVE_ANTHROPIC_MAX_TOKENS", "220")),
+                        "system": "You are Architect-7 from Mindweave. Keep responses concise, actionable, and supportive.",
+                        "messages": [{"role": "user", "content": message}],
+                    },
+                    timeout=timeout_seconds,
+                )
+                if response.status_code != 200:
+                    logger.warning("Anthropic chat call failed with status=%s", response.status_code)
+                    return None, provider
+                data = response.json()
+                for block in data.get("content", []):
+                    if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                        return block["text"].strip(), provider
+                return None, provider
+
+            model = os.getenv("MINDWEAVE_OPENAI_MODEL", "gpt-4o-mini")
+            response = requests.post(
+                os.getenv("MINDWEAVE_OPENAI_CHAT_URL", "https://api.openai.com/v1/chat/completions"),
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "temperature": 0.6,
+                    "messages": [
+                        {"role": "system", "content": "You are Architect-7 from Mindweave. Keep responses concise, actionable, and supportive."},
+                        {"role": "user", "content": message},
+                    ],
+                },
+                timeout=timeout_seconds,
+            )
+            if response.status_code != 200:
+                logger.warning("OpenAI-compatible chat call failed with status=%s", response.status_code)
+                return None, provider
+            data = response.json()
+            choices = data.get("choices", [])
+            if choices and isinstance(choices[0], dict):
+                content = (((choices[0].get("message") or {}).get("content")) or "").strip()
+                return content or None, provider
+            return None, provider
+        except requests.RequestException as exc:
+            logger.warning("External LLM call failed for provider=%s: %s", provider, exc)
+            return None, provider
+
     def _build_coaching_hint(self, message: str, telemetry: dict[str, Any], task_type: str) -> str | None:
         lower_text = message.lower()
         phase = str(telemetry.get("phase", "")).lower()
@@ -414,14 +486,20 @@ class MindweaveAI:
                 "requested_action": message,
             }
         )
-        route_result = self._route_event(event)
+        api_key = str(payload.get("api_key", "") or "").strip()
+        llm_reply, llm_provider = self._generate_external_llm_reply(api_key, message, event)
+        route_result = {"status": "llm_direct", "task_type": event.get("task_type", "npc_dialogue")} if llm_reply else self._route_event(event)
 
         lower_text = message.lower()
         task_type = event.get("task_type", "npc_dialogue")
         telemetry = event.get("telemetry", {}) if isinstance(event.get("telemetry"), dict) else {}
         coaching_hint = self._build_coaching_hint(message, telemetry, task_type)
 
-        if task_type == "debrief_reflection":
+        if llm_reply and task_type == "npc_dialogue":
+            response = llm_reply
+            voice = "../src/audio/A7_link_established.m4a"
+            emotion, analysis, eq_delta = "calm", f"LLM Dialogue / {llm_provider or 'unknown'}", 5
+        elif task_type == "debrief_reflection":
             if any(token in lower_text for token in ("strategy", "reflect", "transfer", "real-world", "collaboration", "adapt")):
                 response, voice = self._pick_response(
                     "debrief",
@@ -450,7 +528,7 @@ class MindweaveAI:
                 "Architect link established. I can help you map intent, constraints, and next actions—what do you need solved?",
                 "../src/audio/A7_link_established.m4a",
             )
-            response = self._extract_language_reply(route_result, fallback_response)
+            response = llm_reply or self._extract_language_reply(route_result, fallback_response)
             if isinstance(planned_dialogue, dict):
                 plan_steps = planned_dialogue.get("plan_steps")
                 if isinstance(plan_steps, int):
@@ -474,6 +552,8 @@ class MindweaveAI:
         self.shared_memory.set("mindweave:last_chat", {"event": event, "route": route_result})
         return {
             "reply": response,
+            "llm_provider": llm_provider,
+            "llm_used": bool(llm_reply),
             "emotion": emotion,
             "analysis": analysis,
             "eq_delta": eq_delta,
