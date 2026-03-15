@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patolli | R-Games</title>
+  <link rel="icon" type="image/x-icon" href="../img/Logo01.svg" />
+  <link rel="stylesheet" href="src/index.css" />
+</head>
+<body>
+  <main class="patolli-shell">
+    <header class="top-bar">
+      <div>
+        <p class="subtitle">AZTEC STRATEGY / LUCK RACE</p>
+        <h1>PATOLLI</h1>
+      </div>
+      <div class="status-right">
+        <p id="turn-label">CURRENT TURN</p>
+        <h2 id="turn-name" class="red-turn">RED</h2>
+      </div>
+    </header>
+
+    <section class="board-row">
+      <aside class="player-card red active" id="red-card">
+        <h3>RED</h3>
+        <p><span>Points</span><strong id="red-score">0</strong></p>
+        <p><span>Lap</span><strong id="red-lap">0</strong></p>
+        <p><span>Tokens Home</span><strong id="red-home">6</strong></p>
+        <p class="objective">Advance your runner around the sacred cross. Every full loop earns 5 points.</p>
+      </aside>
+
+      <section class="board-wrap">
+        <div class="lane red"></div>
+        <div class="patolli-board" aria-label="Patolli board">
+          <div class="cross-arm arm-a"></div>
+          <div class="cross-arm arm-b"></div>
+          <div class="center-stone">●</div>
+          <div class="runner red" id="red-runner" title="Red runner"></div>
+          <div class="runner blue" id="blue-runner" title="Blue runner"></div>
+        </div>
+        <div class="lane blue"></div>
+
+        <div class="controls">
+          <button id="roll-btn" class="action-btn">Cast Beans</button>
+          <button id="move-btn" class="action-btn" disabled>Advance Runner</button>
+        </div>
+      </section>
+
+      <aside class="player-card blue" id="blue-card">
+        <h3>BLUE</h3>
+        <p><span>Points</span><strong id="blue-score">0</strong></p>
+        <p><span>Lap</span><strong id="blue-lap">0</strong></p>
+        <p><span>Tokens Home</span><strong id="blue-home">6</strong></p>
+        <p class="objective">Land on your rival to send their runner home and claim 2 bonus points.</p>
+      </aside>
+    </section>
+
+    <section class="right-panel">
+      <h4>RITUAL LOG</h4>
+      <div id="last-roll" class="last-roll">Roll: —</div>
+      <div id="log" class="log-box"></div>
+    </section>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
