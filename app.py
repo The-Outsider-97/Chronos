@@ -452,6 +452,10 @@ class RequestHandler(SimpleHTTPRequestHandler):
 
         if self.path == "/api/ai/chat":
             try:
+                if isinstance(payload, dict):
+                    api_key = self.headers.get("X-Mindweave-API-Key", "").strip()
+                    if api_key:
+                        payload["api_key"] = api_key
                 result = runtime.ai_chat(self.session_id, payload)
                 status = HTTPStatus.OK if "error" not in result else HTTPStatus.BAD_REQUEST
                 self._send_json(result, status)
