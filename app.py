@@ -76,6 +76,27 @@ GAMES: dict[str, GameConfig] = {
         ai_initializer="initialize_ai",
         launch_url="/mindweave/index.html",
     ),
+    "patolli": GameConfig(
+        key="patolli",
+        display_name="Patolli",
+        ai_module="ai_patolli",
+        ai_initializer="initialize_ai",
+        launch_url="/patolli/index.html",
+    ),
+    "puluc": GameConfig(
+        key="puluc",
+        display_name="Puluc",
+        ai_module="ai_puluc",
+        ai_initializer="initialize_ai",
+        launch_url="/puluc/index.html",
+    ),
+    "parallax_protocol": GameConfig(
+        key="parallax",
+        display_name="Parallax Protocol",
+        ai_module="ai_parallax",
+        ai_initializer="initialize_ai",
+        launch_url="/parallax/index.html",
+    ),
 }
 
 
