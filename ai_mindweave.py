@@ -289,7 +289,15 @@ class MindweaveAI:
                 return result
 
         execute_fn = getattr(self.language_agent, "execute", None)
-        if callable(execute_fn):
+        execute_impl = getattr(execute_fn, "__func__", execute_fn)
+        execute_module = getattr(execute_impl, "__module__", "")
+        execute_qualname = getattr(execute_impl, "__qualname__", "")
+        execute_is_base = execute_module.endswith("base_agent") and execute_qualname.endswith("BaseAgent.execute")
+
+        # Only use execute() when the language agent provides a dialogue-aware
+        # override. Skipping base-agent execute avoids routing chat through generic
+        # prediction/planning internals.
+        if callable(execute_fn) and not execute_is_base:
             try:
                 result = execute_fn(sanitized_event)
             except ValueError as exc:
@@ -299,7 +307,19 @@ class MindweaveAI:
                         "response": "I am present and listening. Share your objective, and I will architect the next move.",
                         "reason": "language agent execute path expects planning commands",
                     }
-                raise
+                logger.warning("Language execute() failed for chat payload: %s", exc)
+                return {
+                    "status": "fallback",
+                    "response": "Architect link unstable. Restate your objective and constraints.",
+                    "reason": "language execute path raised ValueError",
+                }
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Language execute() raised unexpected error for chat payload: %s", exc)
+                return {
+                    "status": "fallback",
+                    "response": "Architect link unstable. Restate your objective and constraints.",
+                    "reason": "language execute path raised exception",
+                }
 
             if isinstance(result, dict) and result.get("status") == "AWAITING_PLAN":
                 return {
@@ -315,8 +335,6 @@ class MindweaveAI:
                     "reason": "language execute path returned internal fallback payload",
                 }
 
-            # If execute returns non-dialogue content, keep a useful
-            # player-facing fallback message.
             if not self._has_dialogue_payload(result):
                 return {
                     "status": "fallback",
@@ -326,7 +344,11 @@ class MindweaveAI:
 
             return result
 
-        return {"note": "language execution unavailable"}
+        return {
+            "status": "fallback",
+            "response": "Architect link established. State your goal and constraints so I can plan the next move.",
+            "reason": "no language dialogue handler available",
+        }
 
     def _extract_language_reply(self, route_result: dict[str, Any], fallback_message: str) -> str:
         if route_result.get("status") != "routed":
@@ -412,17 +434,17 @@ class MindweaveAI:
                         "model": model,
                         "max_tokens": int(os.getenv("MINDWEAVE_ANTHROPIC_MAX_TOKENS", "220")),
                         "system": "You are Architect-7 from Mindweave. Keep responses concise, actionable, and supportive.",
-                        "messages": [{"role": "user", "content": message}],
+                        "messages": [{"role": "user", "content": [{"type": "text", "text": message}]}],
                     },
                     timeout=timeout_seconds,
                 )
                 if response.status_code != 200:
-                    logger.warning("Anthropic chat call failed with status=%s", response.status_code)
-                    return None, provider
-                data = response.json()
-                for block in data.get("content", []):
-                    if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
-                        return block["text"].strip(), provider
+                    response_excerpt = (response.text or "").strip().replace("\n", " ")[:300]
+                    logger.warning(
+                        "Anthropic chat call failed with status=%s body=%s",
+                        response.status_code,
+                        response_excerpt or "<empty>",
+                    )
                 return None, provider
 
             model = os.getenv("MINDWEAVE_OPENAI_MODEL", "gpt-4o-mini")
