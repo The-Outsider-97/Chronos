@@ -12,7 +12,8 @@ const state = {
   red: { index: 0, lap: 0, score: 0 },
   blue: { index: 12, lap: 0, score: 0 },
   pendingRoll: null,
-  winner: null
+  winner: null,
+  lastAction: '—'
 };
 
 const refs = {
@@ -32,7 +33,15 @@ const refs = {
   moveBtn: document.getElementById('move-btn'),
   lastRoll: document.getElementById('last-roll'),
   beanPips: document.querySelectorAll('#bean-pips span'),
-  log: document.getElementById('log')
+  log: document.getElementById('log'),
+  scoreLead: document.getElementById('score-lead'),
+  scoreGap: document.getElementById('score-gap'),
+  totalLaps: document.getElementById('total-laps'),
+  scoreLastAction: document.getElementById('score-last-action'),
+  bgMusic: document.getElementById('bg-music'),
+  muteBtn: document.getElementById('mute-btn'),
+  volumeSlider: document.getElementById('volume-slider'),
+  volumeValue: document.getElementById('volume-value')
 };
 
 function setRunnerPosition(color) {
@@ -52,6 +61,21 @@ function appendLog(message) {
   const entry = document.createElement('p');
   entry.textContent = message;
   refs.log.prepend(entry);
+  state.lastAction = message;
+}
+
+function syncScoreboard() {
+  const scoreDiff = state.red.score - state.blue.score;
+  refs.scoreGap.textContent = String(Math.abs(scoreDiff));
+  refs.totalLaps.textContent = String(state.red.lap + state.blue.lap);
+  refs.scoreLastAction.textContent = state.lastAction;
+
+  if (scoreDiff === 0) {
+    refs.scoreLead.textContent = 'Tied';
+    return;
+  }
+
+  refs.scoreLead.textContent = scoreDiff > 0 ? 'Red + Lead' : 'Blue + Lead';
 }
 
 function syncUi() {
@@ -72,6 +96,7 @@ function syncUi() {
     refs.winnerBanner.classList.remove('hidden');
   }
 
+  syncScoreboard();
   setRunnerPosition('red');
   setRunnerPosition('blue');
 }
@@ -124,6 +149,41 @@ function applyRoll() {
   nextTurn();
 }
 
+function syncAudioUi() {
+  refs.volumeValue.textContent = `${Math.round(refs.bgMusic.volume * 100)}%`;
+  refs.muteBtn.textContent = refs.bgMusic.muted ? 'Unmute' : 'Mute';
+  refs.muteBtn.setAttribute('aria-pressed', String(refs.bgMusic.muted));
+}
+
+function initializeAudio() {
+  refs.bgMusic.volume = 0.5;
+  syncAudioUi();
+
+  const tryPlay = () => {
+    refs.bgMusic.play().catch(() => {});
+  };
+
+  document.addEventListener('click', tryPlay, { once: true });
+  document.addEventListener('keydown', tryPlay, { once: true });
+
+  refs.muteBtn.addEventListener('click', () => {
+    refs.bgMusic.muted = !refs.bgMusic.muted;
+    if (!refs.bgMusic.muted) {
+      refs.bgMusic.play().catch(() => {});
+    }
+    syncAudioUi();
+  });
+
+  refs.volumeSlider.addEventListener('input', (event) => {
+    const volume = Number(event.target.value) / 100;
+    refs.bgMusic.volume = volume;
+    if (volume > 0 && refs.bgMusic.muted) {
+      refs.bgMusic.muted = false;
+    }
+    syncAudioUi();
+  });
+}
+
 refs.rollBtn.addEventListener('click', () => {
   if (state.pendingRoll || state.winner) return;
   state.pendingRoll = Math.ceil(Math.random() * 5);
@@ -131,10 +191,13 @@ refs.rollBtn.addEventListener('click', () => {
   setBeanPips(state.pendingRoll);
   refs.moveBtn.disabled = false;
   appendLog(`${state.turn.toUpperCase()} cast beans for ${state.pendingRoll}.`);
+  syncUi();
 });
 
 refs.moveBtn.addEventListener('click', applyRoll);
 
+initializeAudio();
 setBeanPips(0);
 syncUi();
 appendLog('Match started. Red takes the first cast.');
+syncUi();
