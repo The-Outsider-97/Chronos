@@ -26,6 +26,19 @@ body {
     radial-gradient(circle at top, #16181f 0%, #0b0c10 50%, var(--bg) 100%);
 }
 
+.home-btn {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  text-decoration: none;
+  color: #dbe3ef;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 14px;
+  background: rgba(9, 11, 16, .7);
+}
+
 .patolli-shell {
   max-width: 1240px;
   margin: 0 auto;
@@ -83,6 +96,30 @@ h1 {
   line-height: 1;
 }
 
+.audio-controls {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.audio-btn {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(9, 11, 16, .6);
+  color: #dbe3ef;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.audio-controls label,
+#volume-value {
+  font-size: 11px;
+  color: #9ba3b2;
+}
+
+#volume-slider { accent-color: var(--gold); }
+
 .red-turn { color: var(--red); }
 .blue-turn { color: var(--blue); }
 
@@ -102,7 +139,7 @@ h1 {
 
 .board-row {
   display: grid;
-  grid-template-columns: 260px 1fr 260px;
+  grid-template-columns: 260px 1fr 300px;
   gap: 22px;
   margin-top: 24px;
   align-items: start;
@@ -163,6 +200,12 @@ h1 {
 .player-card.red h3 { color: var(--red); }
 .player-card.blue { border-color: rgba(46, 141, 252, .45); }
 .player-card.blue h3 { color: var(--blue); }
+
+.right-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 
 .board-wrap {
   display: flex;
@@ -346,7 +389,6 @@ h1 {
 }
 
 .right-panel {
-  margin-top: 22px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgba(8, 10, 16, .76);
@@ -358,6 +400,20 @@ h1 {
   color: #8f99a9;
   font-size: 12px;
   letter-spacing: .2em;
+}
+
+.scoreboard-box {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 14px;
+  padding: 10px;
+  background: #06070a;
+}
+
+.scoreboard-box p {
+  margin: 0 0 8px;
+  display: flex;
+  justify-content: space-between;
 }
 
 .last-roll {
@@ -385,6 +441,7 @@ h1 {
 
 @media (max-width: 1080px) {
   .board-row { grid-template-columns: 1fr; }
+  .right-column { order: 3; }
   .patolli-board,
   .lane,
   .bean-tray { width: min(460px, 86vw); }
