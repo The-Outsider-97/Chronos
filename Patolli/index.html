@@ -10,13 +10,16 @@
 <body>
   <main class="patolli-shell">
     <header class="top-bar">
-      <div>
+      <div class="title-wrap">
         <p class="subtitle">AZTEC STRATEGY / LUCK RACE</p>
         <h1>PATOLLI</h1>
+        <p class="title-note">Cross the sacred path, capture rivals, and claim favor.</p>
       </div>
+
       <div class="status-right">
         <p id="turn-label">CURRENT TURN</p>
         <h2 id="turn-name" class="red-turn">RED</h2>
+        <div id="winner-banner" class="winner-banner hidden" role="status" aria-live="polite"></div>
       </div>
     </header>
 
@@ -31,18 +34,37 @@
 
       <section class="board-wrap">
         <div class="lane red"></div>
+
         <div class="patolli-board" aria-label="Patolli board">
+          <div class="board-ring ring-outer" aria-hidden="true"></div>
+          <div class="board-ring ring-inner" aria-hidden="true"></div>
+          <div class="board-glyph-north board-glyph" aria-hidden="true">✦</div>
+          <div class="board-glyph-east board-glyph" aria-hidden="true">✦</div>
+          <div class="board-glyph-south board-glyph" aria-hidden="true">✦</div>
+          <div class="board-glyph-west board-glyph" aria-hidden="true">✦</div>
+
           <div class="cross-arm arm-a"></div>
           <div class="cross-arm arm-b"></div>
-          <div class="center-stone">●</div>
+          <div class="center-stone">
+            <span>☉</span>
+          </div>
+
           <div class="runner red" id="red-runner" title="Red runner"></div>
           <div class="runner blue" id="blue-runner" title="Blue runner"></div>
         </div>
+
         <div class="lane blue"></div>
 
         <div class="controls">
           <button id="roll-btn" class="action-btn">Cast Beans</button>
           <button id="move-btn" class="action-btn" disabled>Advance Runner</button>
+        </div>
+
+        <div class="bean-tray" aria-label="Bean cast result">
+          <p>BEAN CAST</p>
+          <div id="bean-pips" class="bean-pips" aria-live="polite">
+            <span>•</span><span>•</span><span>•</span><span>•</span><span>•</span>
+          </div>
         </div>
       </section>
 
