@@ -1,6 +1,76 @@
 import * as THREE from 'three';
 
 document.addEventListener('DOMContentLoaded', async () => {
+  const responsesPath = '/mindweave/templates/responses.json';
+  let responseTemplates = {};
+  const voiceCache = new Map();
+  let activeVoiceAudio = null;
+  let pendingAutoplayPath = null;
+
+  function resolveAudioPath(path) {
+    if (!path) return path;
+    if (path.startsWith('../src/audio/')) return path.replace('../src/audio/', '/src/audio/');
+    if (path.startsWith('/mindweave/src/audio/')) return path.replace('/mindweave/src/audio/', '/src/audio/');
+    return path;
+  }
+
+  function createVoiceAudio(path) {
+    const resolvedPath = resolveAudioPath(path);
+    const cached = voiceCache.get(resolvedPath) || new Audio(resolvedPath);
+    cached.preload = 'auto';
+    voiceCache.set(resolvedPath, cached);
+    return cached.cloneNode();
+  }
+
+  function playVoice(path, { interrupt = false } = {}) {
+    const resolvedPath = resolveAudioPath(path);
+    if (!resolvedPath) return;
+
+    if (interrupt && activeVoiceAudio) {
+      activeVoiceAudio.pause();
+      activeVoiceAudio.currentTime = 0;
+      activeVoiceAudio = null;
+    }
+
+    const audio = createVoiceAudio(resolvedPath);
+    audio.volume = 0.8;
+    activeVoiceAudio = audio;
+
+    audio.play().catch((error) => {
+      const blockedByAutoplay = error?.name === 'NotAllowedError';
+      if (blockedByAutoplay) {
+        pendingAutoplayPath = resolvedPath;
+      }
+      console.log('Voice playback failed:', error);
+    });
+
+    audio.addEventListener('ended', () => {
+      if (activeVoiceAudio === audio) activeVoiceAudio = null;
+    }, { once: true });
+  }
+
+  function tryResumePendingVoice() {
+    if (!pendingAutoplayPath) return;
+    const path = pendingAutoplayPath;
+    pendingAutoplayPath = null;
+    playVoice(path);
+  }
+
+  document.addEventListener('pointerdown', tryResumePendingVoice, { once: true });
+  document.addEventListener('keydown', tryResumePendingVoice, { once: true });
+
+  async function loadResponseTemplates() {
+    const response = await fetch(responsesPath);
+    if (!response.ok) throw new Error('Failed to load responses');
+    responseTemplates = await response.json();
+  }
+
+  function pickResponse(group) {
+    const options = Array.isArray(responseTemplates[group]) ? responseTemplates[group] : [];
+    if (!options.length) return null;
+    return options[Math.floor(Math.random() * options.length)] || null;
+  }
+
   // === Three.js Background (unchanged) ===
   const container = document.getElementById('academy-canvas');
   const scene = new THREE.Scene();
@@ -64,25 +134,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // === Director's Welcome from responses.json ===
-  const responsesPath = '/mindweave/templates/responses.json';
   let directorMessageEl = document.getElementById('director-message');
-  let directorWelcomeSection = document.getElementById('director-welcome');
 
   try {
-    const response = await fetch(responsesPath);
-    if (!response.ok) throw new Error('Failed to load responses');
-    const templates = await response.json();
-    const directorWelcomeGroup = templates.director_welcome;
-    if (directorWelcomeGroup && directorWelcomeGroup.length > 0) {
-      const randomIndex = Math.floor(Math.random() * directorWelcomeGroup.length);
-      const chosen = directorWelcomeGroup[randomIndex];
+    await loadResponseTemplates();
+    const chosen = pickResponse('director_welcome');
+    if (chosen) {
       directorMessageEl.textContent = chosen.text;
-      if (chosen.voice) {
-        // Attempt to play audio (may be blocked by autoplay policy)
-        const audio = new Audio(chosen.voice);
-        audio.volume = 0.8;
-        audio.play().catch(e => console.log('Director audio play failed (autoplay policy?):', e));
-      }
+      playVoice(chosen.voice);
     } else {
       directorMessageEl.textContent = 'Welcome to Weaver Academy.';
     }
@@ -187,20 +246,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function playDirectorCongratulations() {
     try {
-      const response = await fetch(responsesPath);
-      if (!response.ok) throw new Error('Failed to load responses');
-      const templates = await response.json();
-      const congratsGroup = templates.director_congratulations;
-      if (congratsGroup && congratsGroup.length > 0) {
-        const randomIndex = Math.floor(Math.random() * congratsGroup.length);
-        const chosen = congratsGroup[randomIndex];
-        if (chosen.voice) {
-          const audio = new Audio(chosen.voice);
-          audio.volume = 0.8;
-          audio.play().catch(e => console.log('Congratulations audio play failed:', e));
-        }
-        // Optionally show a message
-        // Could also display a temporary notification
+      if (!Object.keys(responseTemplates).length) {
+        await loadResponseTemplates();
+      }
+      const chosen = pickResponse('director_congratulations');
+      if (chosen) {
+        playVoice(chosen.voice, { interrupt: true });
       }
     } catch (error) {
       console.error('Director congratulations error:', error);
