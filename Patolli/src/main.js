@@ -1,19 +1,23 @@
 const POSITIONS = [
-  [50, 7], [57, 14], [64, 21], [71, 28], [78, 35], [85, 42],
-  [92, 50], [85, 58], [78, 65], [71, 72], [64, 79], [57, 86],
-  [50, 93], [43, 86], [36, 79], [29, 72], [22, 65], [15, 58],
-  [8, 50], [15, 42], [22, 35], [29, 28], [36, 21], [43, 14]
+  [50, 8], [58, 14], [66, 20], [74, 28], [82, 36], [88, 44],
+  [92, 50], [88, 56], [82, 64], [74, 72], [66, 80], [58, 86],
+  [50, 92], [42, 86], [34, 80], [26, 72], [18, 64], [12, 56],
+  [8, 50], [12, 44], [18, 36], [26, 28], [34, 20], [42, 14]
 ];
+
+const WIN_SCORE = 20;
 
 const state = {
   turn: 'red',
   red: { index: 0, lap: 0, score: 0 },
   blue: { index: 12, lap: 0, score: 0 },
-  pendingRoll: null
+  pendingRoll: null,
+  winner: null
 };
 
 const refs = {
   turnName: document.getElementById('turn-name'),
+  winnerBanner: document.getElementById('winner-banner'),
   redCard: document.getElementById('red-card'),
   blueCard: document.getElementById('blue-card'),
   redRunner: document.getElementById('red-runner'),
@@ -27,6 +31,7 @@ const refs = {
   rollBtn: document.getElementById('roll-btn'),
   moveBtn: document.getElementById('move-btn'),
   lastRoll: document.getElementById('last-roll'),
+  beanPips: document.querySelectorAll('#bean-pips span'),
   log: document.getElementById('log')
 };
 
@@ -35,6 +40,12 @@ function setRunnerPosition(color) {
   const node = color === 'red' ? refs.redRunner : refs.blueRunner;
   node.style.left = `${x}%`;
   node.style.top = `${y}%`;
+}
+
+function setBeanPips(value = 0) {
+  refs.beanPips.forEach((pip, index) => {
+    pip.classList.toggle('active', index < value);
+  });
 }
 
 function appendLog(message) {
@@ -56,6 +67,11 @@ function syncUi() {
   refs.redHome.textContent = String(Math.max(0, 6 - state.red.lap));
   refs.blueHome.textContent = String(Math.max(0, 6 - state.blue.lap));
 
+  if (state.winner) {
+    refs.winnerBanner.textContent = `${state.winner.toUpperCase()} CLAIMED THE RITUAL`;
+    refs.winnerBanner.classList.remove('hidden');
+  }
+
   setRunnerPosition('red');
   setRunnerPosition('blue');
 }
@@ -64,51 +80,61 @@ function nextTurn() {
   state.pendingRoll = null;
   refs.moveBtn.disabled = true;
   state.turn = state.turn === 'red' ? 'blue' : 'red';
+  setBeanPips(0);
   syncUi();
 }
 
+function completeGame() {
+  refs.rollBtn.disabled = true;
+  refs.moveBtn.disabled = true;
+  state.winner = state.turn;
+}
+
 function applyRoll() {
-  if (!state.pendingRoll) return;
+  if (!state.pendingRoll || state.winner) return;
+
   const mover = state[state.turn];
   const foeColor = state.turn === 'red' ? 'blue' : 'red';
   const foe = state[foeColor];
-
   const oldIndex = mover.index;
+
   mover.index = (mover.index + state.pendingRoll) % POSITIONS.length;
   if (mover.index <= oldIndex) {
     mover.lap += 1;
     mover.score += 5;
-    appendLog(`${state.turn.toUpperCase()} completed a lap (+5 points).`);
+    appendLog(`${state.turn.toUpperCase()} completed a sacred loop (+5).`);
   }
 
   if (mover.index === foe.index) {
     foe.index = foeColor === 'red' ? 0 : 12;
     mover.score += 2;
-    appendLog(`${state.turn.toUpperCase()} captured ${foeColor.toUpperCase()} (+2 points).`);
+    appendLog(`${state.turn.toUpperCase()} captured ${foeColor.toUpperCase()} (+2).`);
   }
 
   appendLog(`${state.turn.toUpperCase()} advanced ${state.pendingRoll} spaces.`);
 
-  if (mover.score >= 20) {
+  if (mover.score >= WIN_SCORE) {
     appendLog(`${state.turn.toUpperCase()} wins the match!`);
-    refs.rollBtn.disabled = true;
-    refs.moveBtn.disabled = true;
-  } else {
-    nextTurn();
+    completeGame();
+    setBeanPips(state.pendingRoll);
+    syncUi();
+    return;
   }
 
-  syncUi();
+  nextTurn();
 }
 
 refs.rollBtn.addEventListener('click', () => {
-  if (state.pendingRoll) return;
+  if (state.pendingRoll || state.winner) return;
   state.pendingRoll = Math.ceil(Math.random() * 5);
   refs.lastRoll.textContent = `Roll: ${state.pendingRoll}`;
+  setBeanPips(state.pendingRoll);
   refs.moveBtn.disabled = false;
   appendLog(`${state.turn.toUpperCase()} cast beans for ${state.pendingRoll}.`);
 });
 
 refs.moveBtn.addEventListener('click', applyRoll);
 
+setBeanPips(0);
 syncUi();
 appendLog('Match started. Red takes the first cast.');
